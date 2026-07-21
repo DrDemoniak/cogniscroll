@@ -191,13 +191,20 @@ export async function getRecentLessons(
 /** Récupère les leçons favorites */
 export async function getFavoriteLessons(uid: string): Promise<SavedLesson[]> {
   console.log('[FIRESTORE] Lecture favoris:', uid);
+  // Pas d'orderBy ici pour éviter de nécessiter un index composite Firestore
+  // On trie côté client après récupération
   const q = query(
     collection(db, 'users', uid, 'lessons'),
-    where('isFavorite', '==', true),
-    orderBy('completedAt', 'desc')
+    where('isFavorite', '==', true)
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SavedLesson);
+  const lessons = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SavedLesson);
+  // Tri côté client par date décroissante
+  return lessons.sort((a, b) => {
+    const aDate = a.completedAt?.toDate ? a.completedAt.toDate() : new Date(a.completedAt || 0);
+    const bDate = b.completedAt?.toDate ? b.completedAt.toDate() : new Date(b.completedAt || 0);
+    return bDate.getTime() - aDate.getTime();
+  });
 }
 
 /** Toggle le statut favori d'une leçon */
@@ -215,13 +222,18 @@ export async function getLessonsByTheme(
   uid: string,
   theme: string
 ): Promise<SavedLesson[]> {
+  // Pas d'orderBy pour éviter un index composite Firestore — tri client-side
   const q = query(
     collection(db, 'users', uid, 'lessons'),
-    where('theme', '==', theme),
-    orderBy('completedAt', 'desc')
+    where('theme', '==', theme)
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SavedLesson);
+  const lessons = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SavedLesson);
+  return lessons.sort((a, b) => {
+    const aDate = a.completedAt?.toDate ? a.completedAt.toDate() : new Date(a.completedAt || 0);
+    const bDate = b.completedAt?.toDate ? b.completedAt.toDate() : new Date(b.completedAt || 0);
+    return aDate.getTime() - bDate.getTime(); // ordre croissant pour la roadmap (niveau 1 en premier)
+  });
 }
 
 // ─────────────────────────────────────────────

@@ -18,6 +18,7 @@ import {
   addReviewCards,
   recordDailyStats,
   unlockBadges,
+  toggleFavorite,
 } from '@/lib/firestore';
 import { checkNewBadges, computeQuizXP, computeStars, getBadgeById } from '@/lib/gamification';
 import type { QuizQuestion } from '@/lib/types';
@@ -28,10 +29,12 @@ export default function QuizPage() {
   const { addToast } = useToast();
 
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
-  const [quizMeta,  setQuizMeta]  = useState<{ lessonId: string; theme: string } | null>(null);
+  const [quizMeta,  setQuizMeta]  = useState<{ lessonId: string; theme: string; lessonTitle: string } | null>(null);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState('');
   const [summary,   setSummary]   = useState<{ score: number; total: number; xpEarned: number; stars: number } | null>(null);
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favLoading, setFavLoading] = useState(false);
 
   // Charge et génère le quiz depuis les données de session
   useEffect(() => {
@@ -44,7 +47,9 @@ export default function QuizPage() {
       }
 
       const { lessonId, lessonTitle, lessonSummary, lessonSections, theme } = JSON.parse(raw);
-      setQuizMeta({ lessonId, theme });
+      setQuizMeta({ lessonId, theme, lessonTitle });
+      // Récupérer le statut favori actuel depuis sessionStorage
+      setIsFavorite(sessionStorage.getItem('isFavorite') === 'true');
 
       console.log('[QUIZ] Génération du quiz pour:', lessonTitle);
       try {
@@ -81,9 +86,7 @@ export default function QuizPage() {
       // 1. Sauvegarde du résultat
       await saveQuizResult(user.uid, {
         lessonId: quizMeta.lessonId,
-        lessonTitle: sessionStorage.getItem('quizLesson')
-          ? JSON.parse(sessionStorage.getItem('quizLesson')!).lessonTitle
-          : 'Leçon',
+        lessonTitle: quizMeta.lessonTitle || 'Leçon',
         theme: quizMeta.theme,
         score,
         totalQuestions: total,
@@ -141,6 +144,25 @@ export default function QuizPage() {
     } catch (err) {
       console.error('[QUIZ] Erreur sauvegarde:', err);
       addToast('Erreur de sauvegarde des résultats', 'error');
+    }
+  };
+
+  /** Toggle favori depuis l'écran de résultat */
+  const handleFavoriteToggle = async () => {
+    if (!user || !quizMeta?.lessonId) return;
+    setFavLoading(true);
+    const newValue = !isFavorite;
+    try {
+      await toggleFavorite(user.uid, quizMeta.lessonId, newValue);
+      setIsFavorite(newValue);
+      sessionStorage.setItem('isFavorite', String(newValue));
+      addToast(newValue ? '❤️ Ajouté aux favoris' : '💔 Retiré des favoris', 'success');
+      console.log('[QUIZ] Favori mis à jour:', newValue);
+    } catch (err) {
+      console.error('[QUIZ] Erreur toggle favori:', err);
+      addToast('Erreur lors de la mise à jour des favoris', 'error');
+    } finally {
+      setFavLoading(false);
     }
   };
 
@@ -212,6 +234,14 @@ export default function QuizPage() {
                 </button>
                 <button className="btn btn-secondary" onClick={() => router.push('/learn')}>
                   📚 Nouvelle leçon
+                </button>
+                {/* Bouton favori depuis l'écran de résultat */}
+                <button
+                  className={`btn ${isFavorite ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={handleFavoriteToggle}
+                  disabled={favLoading || !quizMeta?.lessonId}
+                >
+                  {favLoading ? '⏳' : isFavorite ? '❤️ Retirer des favoris' : '🤍 Ajouter aux favoris'}
                 </button>
                 {summary.score < summary.total && (
                   <button className="btn btn-ghost" onClick={() => router.push('/reviews')}>
