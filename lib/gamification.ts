@@ -189,17 +189,19 @@ export function getYesterdayString(): string {
 
 /**
  * Calcule le nouveau streak en fonction de la dernière activité.
+ * - Premier jour (lastActivityDate vide) : streak = 1
  * - Même jour : streak inchangé
  * - Hier : streak + 1
- * - Avant hier ou plus : reset à 1
+ * - Avant hier ou plus : reset à 1 (streak brisé)
  */
 export function computeStreak(lastActivityDate: string, currentStreak: number): number {
-  const today = getTodayString();
+  const today     = getTodayString();
   const yesterday = getYesterdayString();
 
-  if (lastActivityDate === today) return currentStreak;
-  if (lastActivityDate === yesterday) return currentStreak + 1;
-  return 1; // streak brisé
+  if (!lastActivityDate)            return 1;   // Premier jour d'activité
+  if (lastActivityDate === today)   return currentStreak; // Déjà joué aujourd'hui
+  if (lastActivityDate === yesterday) return currentStreak + 1; // Continuité
+  return 1; // Streak brisé (plus de 1 jour d'absence)
 }
 
 // ─────────────────────────────────────────────

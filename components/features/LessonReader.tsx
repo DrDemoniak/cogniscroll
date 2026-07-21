@@ -2,18 +2,39 @@
 
 /**
  * components/features/LessonReader.tsx
- * Lecteur de fiche de connaissance avec :
- * - Barre de progression de lecture (scroll-driven)
- * - Toggle favori
- * - Audio via Google Cloud TTS (bouton Play/Stop)
- * - Bouton "Passer au Quiz"
+ * Lecteur complet de fiche de connaissance avec :
+ * - Barre de progression scroll-driven
+ * - Images Pexels contextuelles
+ * - Sources citées avec liens cliquables
+ * - Lien YouTube pour approfondir
+ * - Audio Google Cloud TTS (Play/Stop)
+ * - Toggle favoris
+ * - Bouton "Aller plus loin" (génère un approfondissement)
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 import { LessonContent } from '@/lib/types';
 
+interface PexelsImage {
+  url: string;
+  thumb: string;
+  alt: string;
+  credit: string;
+  creditUrl: string;
+}
+
+interface Source {
+  title: string;
+  url: string;
+}
+
 interface LessonReaderProps {
-  lesson: LessonContent;
+  lesson: LessonContent & {
+    images?: PexelsImage[];
+    sources?: Source[];
+    youtubeQuery?: string;
+  };
   lessonId: string;
   isFavorite: boolean;
   onFavoriteToggle: () => void;
@@ -27,60 +48,52 @@ export default function LessonReader({
   onFavoriteToggle,
   onComplete,
 }: LessonReaderProps) {
+  const router  = useRouter();
+  const params  = useParams<{ theme: string }>();
+
   const [scrollProgress, setScrollProgress] = useState(0);
   const [isPlaying,      setIsPlaying]      = useState(false);
   const [audioLoading,   setAudioLoading]   = useState(false);
+  const [goFurtherLoading, setGoFurtherLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // ── Barre de progression au scroll ──────────────────────────────────────
+  // ── Barre de progression scroll ─────────────────────────────────────────
   useEffect(() => {
-    console.log('[LESSON_READER] Mount, lessonId:', lessonId);
-
     const handleScroll = () => {
       const scrollPx    = document.documentElement.scrollTop;
       const winHeightPx = document.documentElement.scrollHeight - document.documentElement.clientHeight;
       if (winHeightPx > 0) setScrollProgress((scrollPx / winHeightPx) * 100);
     };
-
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, [lessonId]);
 
-  // ── Cleanup audio au démontage du composant ──────────────────────────────
+  // ── Cleanup audio au démontage ─────────────────────────────────────────
   useEffect(() => {
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = '';
-        audioRef.current = null;
       }
     };
   }, []);
 
-  // ── Synthèse vocale via Google Cloud TTS ────────────────────────────────
+  // ── Audio TTS Google ────────────────────────────────────────────────────
   const handleAudioToggle = useCallback(async () => {
-    // STOP si déjà en train de jouer
     if (isPlaying && audioRef.current) {
-      console.log('[LESSON_READER] Stop audio');
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
       setIsPlaying(false);
       return;
     }
 
-    // Si un audio existe déjà (mis en pause), reprendre
-    if (audioRef.current && audioRef.current.src && !isPlaying) {
-      console.log('[LESSON_READER] Reprise audio');
+    if (audioRef.current?.src && !isPlaying) {
       audioRef.current.play();
       setIsPlaying(true);
       return;
     }
 
-    // Sinon, générer l'audio via l'API TTS
     setAudioLoading(true);
-    console.log('[LESSON_READER] Génération audio TTS...');
-
-    // On concatène tout le texte de la leçon
     const text = [
       lesson.title + '.',
       ...lesson.sections.flatMap(s => [s.title + '.', s.content]),
@@ -94,126 +107,149 @@ export default function LessonReader({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
       });
-
-      if (!res.ok) throw new Error(`TTS error: ${res.status}`);
-
+      if (!res.ok) throw new Error(`TTS ${res.status}`);
       const { audioContent } = await res.json();
 
-      // Décode le base64 en blob audio MP3
       const byteChars   = atob(audioContent);
       const byteNumbers = Array.from(byteChars).map(c => c.charCodeAt(0));
-      const byteArray   = new Uint8Array(byteNumbers);
-      const blob        = new Blob([byteArray], { type: 'audio/mp3' });
+      const blob        = new Blob([new Uint8Array(byteNumbers)], { type: 'audio/mp3' });
       const url         = URL.createObjectURL(blob);
 
       const audio = new Audio(url);
       audioRef.current = audio;
-
-      audio.onended = () => {
-        console.log('[LESSON_READER] Audio terminé');
-        setIsPlaying(false);
-      };
-
-      audio.onerror = () => {
-        console.error('[LESSON_READER] Erreur lecture audio');
-        setIsPlaying(false);
-      };
-
+      audio.onended = () => setIsPlaying(false);
+      audio.onerror = () => setIsPlaying(false);
       await audio.play();
       setIsPlaying(true);
-      console.log('[LESSON_READER] Lecture audio démarrée');
     } catch (err) {
       console.error('[LESSON_READER] Erreur TTS:', err);
-      alert('Impossible de générer l\'audio. Vérifiez votre connexion.');
+      alert("Impossible de générer l'audio.");
     } finally {
       setAudioLoading(false);
     }
   }, [isPlaying, lesson]);
 
+  // ── Bouton "Aller plus loin" ────────────────────────────────────────────
+  const handleGoFurther = useCallback(async () => {
+    if (goFurtherLoading) return;
+    setGoFurtherLoading(true);
+    console.log('[LESSON_READER] Aller plus loin sur:', lesson.topic);
+
+    try {
+      const res = await fetch('/api/generate-lesson', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          theme: lesson.theme,
+          topic: `${lesson.topic} — approfondissement avancé`,
+          themeId: lesson.theme,
+          mode: 'approfondi',
+        }),
+      });
+      if (!res.ok) throw new Error('API error');
+      const { lesson: deeperLesson } = await res.json();
+
+      sessionStorage.setItem('currentLesson',   JSON.stringify(deeperLesson));
+      sessionStorage.setItem('currentLessonId', '');
+      sessionStorage.setItem('isFavorite',      'false');
+      router.push(`/learn/${lesson.theme}/lesson`);
+    } catch (err) {
+      console.error('[LESSON_READER] Erreur go further:', err);
+      alert('Impossible de générer un approfondissement. Réessaie.');
+    } finally {
+      setGoFurtherLoading(false);
+    }
+  }, [lesson, router, goFurtherLoading]);
+
+  // ── Lien YouTube ────────────────────────────────────────────────────────
+  const youtubeUrl = (lesson as any).youtubeQuery
+    ? `https://www.youtube.com/results?search_query=${encodeURIComponent((lesson as any).youtubeQuery)}`
+    : null;
+
+  const images: PexelsImage[]  = (lesson as any).images  || [];
+  const sources: Source[]      = (lesson as any).sources || [];
+
   return (
     <div className="lesson-reader">
 
-      {/* ── Barre de progression lecture (top fixed) ── */}
-      <div
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: 4,
-          zIndex: 100,
-          background: 'var(--surface-secondary)',
-        }}
-      >
-        <div
-          style={{
-            width: `${scrollProgress}%`,
-            height: '100%',
-            background: 'linear-gradient(90deg, var(--primary), var(--secondary))',
-            transition: 'width 0.1s linear',
-          }}
-        />
+      {/* ── Barre de progression ── */}
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: 4, zIndex: 100, background: 'var(--surface-secondary)' }}>
+        <div style={{ width: `${scrollProgress}%`, height: '100%', background: 'linear-gradient(90deg, var(--primary), var(--secondary))', transition: 'width 0.1s linear' }} />
       </div>
 
       {/* ── Header ── */}
       <div className="lesson-header" style={{ marginBottom: 'var(--space-8)' }}>
-        <h1 style={{ marginBottom: 'var(--space-4)' }}>{lesson.title}</h1>
+        <h1 style={{ marginBottom: 'var(--space-4)', lineHeight: 1.3 }}>{lesson.title}</h1>
 
-        {/* Méta-infos */}
-        <div className="lesson-meta" style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-5)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-5)' }}>
           <span className="badge badge-surface">⏱️ {lesson.estimatedMinutes} min</span>
           <span className="badge badge-surface">💪 {lesson.difficulty}</span>
           <span className="badge badge-primary">📚 {lesson.theme}</span>
         </div>
 
-        {/* Contrôles */}
-        <div className="audio-controls" style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-          <button
-            onClick={onFavoriteToggle}
-            className="btn btn-secondary"
-            style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
-          >
-            {isFavorite ? '❤️ Retirer des favoris' : '🤍 Ajouter aux favoris'}
-          </button>
+        {/* Image principale (1ère image) */}
+        {images[0] && (
+          <div style={{ borderRadius: 'var(--radius-xl)', overflow: 'hidden', marginBottom: 'var(--space-6)', position: 'relative' }}>
+            <img
+              src={images[0].thumb}
+              alt={images[0].alt}
+              style={{ width: '100%', height: 240, objectFit: 'cover', display: 'block' }}
+              loading="lazy"
+            />
+            <a
+              href={images[0].creditUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ position: 'absolute', bottom: 8, right: 10, fontSize: '0.7rem', color: 'rgba(255,255,255,0.7)', textDecoration: 'none', background: 'rgba(0,0,0,0.4)', padding: '2px 6px', borderRadius: 4 }}
+            >
+              📷 {images[0].credit} / Pexels
+            </a>
+          </div>
+        )}
 
-          <button
-            onClick={handleAudioToggle}
-            className={`btn ${isPlaying ? 'btn-primary' : 'btn-secondary'}`}
-            disabled={audioLoading}
-            style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 140 }}
-          >
-            {audioLoading ? (
-              <>⏳ Génération audio...</>
-            ) : isPlaying ? (
-              <>⏹️ Arrêter</>
-            ) : (
-              <>🔊 Écouter</>
-            )}
+        {/* Contrôles */}
+        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+          <button onClick={onFavoriteToggle} className="btn btn-secondary">
+            {isFavorite ? '❤️ Retirer des favoris' : '🤍 Favoris'}
+          </button>
+          <button onClick={handleAudioToggle} className={`btn ${isPlaying ? 'btn-primary' : 'btn-secondary'}`} disabled={audioLoading} style={{ minWidth: 130 }}>
+            {audioLoading ? '⏳ Génération...' : isPlaying ? '⏹️ Arrêter' : '🔊 Écouter'}
           </button>
         </div>
       </div>
 
       {/* ── Sections ── */}
       {lesson.sections.map((sec, i) => (
-        <section key={i} className="lesson-section" style={{ marginBottom: 'var(--space-8)' }}>
+        <section key={i} style={{ marginBottom: 'var(--space-8)' }}>
           <h2 style={{ marginBottom: 'var(--space-4)', color: 'var(--primary)' }}>{sec.title}</h2>
-          <p style={{ lineHeight: 1.8, color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
+          <p style={{ lineHeight: 1.85, color: 'var(--text-secondary)', marginBottom: 'var(--space-4)', fontSize: '1.02rem' }}>
             {sec.content}
           </p>
+
+          {/* Image de section (2ème image après la 2ème section) */}
+          {i === 1 && images[1] && (
+            <div style={{ borderRadius: 'var(--radius-xl)', overflow: 'hidden', marginBottom: 'var(--space-5)', position: 'relative' }}>
+              <img
+                src={images[1].thumb}
+                alt={images[1].alt}
+                style={{ width: '100%', height: 200, objectFit: 'cover', display: 'block' }}
+                loading="lazy"
+              />
+              <a
+                href={images[1].creditUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ position: 'absolute', bottom: 8, right: 10, fontSize: '0.7rem', color: 'rgba(255,255,255,0.7)', textDecoration: 'none', background: 'rgba(0,0,0,0.4)', padding: '2px 6px', borderRadius: 4 }}
+              >
+                📷 {images[1].credit} / Pexels
+              </a>
+            </div>
+          )}
+
           {sec.keyPoints?.length > 0 && (
-            <ul className="key-points" style={{ listStyle: 'none', padding: 0 }}>
+            <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
               {sec.keyPoints.map((kp, j) => (
-                <li
-                  key={j}
-                  style={{
-                    padding: 'var(--space-2) var(--space-3)',
-                    marginBottom: 'var(--space-2)',
-                    background: 'var(--surface-secondary)',
-                    borderRadius: 'var(--radius-md)',
-                    borderLeft: '3px solid var(--primary)',
-                    fontSize: '0.95rem',
-                  }}
-                >
+                <li key={j} style={{ padding: 'var(--space-2) var(--space-4)', background: 'var(--surface-secondary)', borderRadius: 'var(--radius-md)', borderLeft: '3px solid var(--primary)', fontSize: '0.95rem' }}>
                   ✦ {kp}
                 </li>
               ))}
@@ -222,42 +258,72 @@ export default function LessonReader({
         </section>
       ))}
 
-      {/* ── Le saviez-vous ? ── */}
-      <div
-        className="did-you-know"
-        style={{
-          background: 'linear-gradient(135deg, rgba(var(--primary-rgb, 99, 102, 241), 0.1), rgba(var(--secondary-rgb, 168, 85, 247), 0.1))',
-          border: '1px solid rgba(99, 102, 241, 0.2)',
-          borderRadius: 'var(--radius-xl)',
-          padding: 'var(--space-6)',
-          marginBottom: 'var(--space-8)',
-        }}
-      >
-        <strong className="did-you-know-label" style={{ display: 'block', marginBottom: 'var(--space-3)', color: 'var(--primary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+      {/* ── Le saviez-vous ── */}
+      <div style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(168,85,247,0.1))', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-xl)', padding: 'var(--space-6)', marginBottom: 'var(--space-8)' }}>
+        <strong style={{ display: 'block', marginBottom: 'var(--space-3)', color: 'var(--primary)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           💡 Le saviez-vous ?
         </strong>
-        <p style={{ lineHeight: 1.7, color: 'var(--text-secondary)', margin: 0 }}>{lesson.didYouKnow}</p>
+        <p style={{ lineHeight: 1.75, color: 'var(--text-secondary)', margin: 0 }}>{lesson.didYouKnow}</p>
       </div>
 
       {/* ── Résumé ── */}
       {lesson.summary && (
-        <div
-          style={{
-            background: 'var(--surface-secondary)',
-            borderRadius: 'var(--radius-xl)',
-            padding: 'var(--space-6)',
-            marginBottom: 'var(--space-8)',
-          }}
-        >
-          <strong style={{ display: 'block', marginBottom: 'var(--space-3)' }}>📋 Résumé</strong>
-          <p style={{ lineHeight: 1.7, color: 'var(--text-secondary)', margin: 0 }}>{lesson.summary}</p>
+        <div style={{ background: 'var(--surface-secondary)', borderRadius: 'var(--radius-xl)', padding: 'var(--space-6)', marginBottom: 'var(--space-8)' }}>
+          <strong style={{ display: 'block', marginBottom: 'var(--space-3)' }}>📋 En résumé</strong>
+          <p style={{ lineHeight: 1.75, color: 'var(--text-secondary)', margin: 0 }}>{lesson.summary}</p>
         </div>
       )}
 
-      {/* ── Bouton complétion ── */}
-      <div style={{ textAlign: 'center', paddingBottom: 'var(--space-10)' }}>
-        <button onClick={onComplete} className="btn btn-primary btn-lg">
+      {/* ── Sources ── */}
+      {sources.length > 0 && (
+        <div style={{ marginBottom: 'var(--space-8)' }}>
+          <h3 style={{ fontSize: '1rem', marginBottom: 'var(--space-3)', color: 'var(--text-muted)' }}>📚 Sources</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+            {sources.map((src, i) => (
+              <a
+                key={i}
+                href={src.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3) var(--space-4)', background: 'var(--surface-secondary)', borderRadius: 'var(--radius-lg)', textDecoration: 'none', color: 'var(--primary)', fontSize: '0.9rem', transition: 'background 0.2s' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover, var(--border))')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'var(--surface-secondary)')}
+              >
+                🔗 {src.title} ↗
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── YouTube ── */}
+      {youtubeUrl && (
+        <div style={{ marginBottom: 'var(--space-8)' }}>
+          <a
+            href={youtubeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-secondary"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)', textDecoration: 'none', width: '100%', justifyContent: 'center' }}
+          >
+            <span style={{ color: '#FF0000', fontSize: '1.3rem' }}>▶</span>
+            Voir des vidéos sur ce sujet
+          </a>
+        </div>
+      )}
+
+      {/* ── CTAs finaux ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', paddingBottom: 'var(--space-10)', alignItems: 'stretch' }}>
+        <button onClick={onComplete} className="btn btn-primary btn-lg" style={{ justifyContent: 'center' }}>
           ✅ J'ai terminé cette leçon
+        </button>
+        <button
+          onClick={handleGoFurther}
+          disabled={goFurtherLoading}
+          className="btn btn-secondary btn-lg"
+          style={{ justifyContent: 'center' }}
+        >
+          {goFurtherLoading ? '⏳ Génération...' : '🚀 Aller plus loin sur ce sujet'}
         </button>
       </div>
     </div>

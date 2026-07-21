@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Dégradé de fond iOS (Deep Tech Blue to Violet) -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="50%" stop-color="#1E1B4B" />
+      <stop offset="100%" stop-color="#3B0764" />
+    </linearGradient>
+
+    <!-- Dégradé pour la bordure brillante lumineuse -->
+    <linearGradient id="borderGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.6" />
+      <stop offset="50%" stop-color="#818CF8" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#C084FC" stop-opacity="0.6" />
+    </linearGradient>
+
+    <!-- Dégradé principal pour le livre et le flux (Cyan to Neon Purple) -->
+    <linearGradient id="primaryFlow" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06B6D4" />
+      <stop offset="50%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#D946EF" />
+    </linearGradient>
+
+    <!-- Dégradé secondaire pour l'effet de profondeur des pages -->
+    <linearGradient id="secondaryFlow" x1="100%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#A855F7" stop-opacity="0.8" />
+    </linearGradient>
+
+    <!-- Dégradé pour l'étoile Gemini (White to Cyan/Pink Glow) -->
+    <linearGradient id="starGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="60%" stop-color="#E0F2FE" />
+      <stop offset="100%" stop-color="#F0ABFC" />
+    </linearGradient>
+
+    <!-- Filtre d'ombre portée pour détacher l'icône du fond -->
+    <filter id="dropShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.4" />
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#06B6D4" flood-opacity="0.2" />
+    </filter>
+  </defs>
+
+  <!-- 1. FOND DE L'ICÔNE (Format Squircle iOS) -->
+  <rect x="24" y="24" width="464" height="464" rx="105" ry="105" fill="url(#bgGradient)" />
+  <rect x="26" y="26" width="460" height="460" rx="103" ry="103" fill="none" stroke="url(#borderGlow)" stroke-width="3" />
+
+  <!-- GROUPE CENTRAL AVEC OMBRE PORTÉE -->
+  <g filter="url(#dropShadow)">
+    
+    <!-- 2. LE FLUX DU SAVOIR (Vague / Scroll ascendant) -->
+    <!-- Courbe arrière (profondeur) -->
+    <path d="M 230 320 C 180 250 310 220 270 140 C 310 190 220 230 270 320 Z" fill="url(#secondaryFlow)" opacity="0.7" />
+    <!-- Courbe principale s'élévant vers l'étoile -->
+    <path d="M 256 330 C 256 240 350 220 320 120 C 370 190 280 230 280 330 Z" fill="url(#primaryFlow)" />
+    <path d="M 240 335 C 200 270 290 230 260 160 C 285 200 240 260 256 335 Z" fill="#E0F2FE" opacity="0.4" />
+
+    <!-- 3. LA BASE : LE LIVRE OUVERT (Pages stylisées) -->
+    <!-- Page Gauche - Couche inférieure -->
+    <path d="M 90 330 Q 170 290 248 335 L 248 365 Q 170 320 90 360 Z" fill="url(#primaryFlow)" />
+    <!-- Page Gauche - Couche supérieure (brillance) -->
+    <path d="M 105 310 Q 175 275 244 320 L 244 340 Q 175 295 105 330 Z" fill="url(#secondaryFlow)" />
+    
+    <!-- Page Droite - Couche inférieure -->
+    <path d="M 422 330 Q 342 290 264 335 L 264 365 Q 342 320 422 360 Z" fill="url(#primaryFlow)" />
+    <!-- Page Droite - Couche supérieure (brillance) -->
+    <path d="M 407 310 Q 337 275 268 320 L 268 340 Q 337 295 407 330 Z" fill="url(#secondaryFlow)" />
+
+    <!-- Point central lumineux du livre (la reliure magique) -->
+    <circle cx="256" cy="335" r="6" fill="#FFFFFF" />
+
+    <!-- 4. L'ÉTOILE DE L'IA GEMINI (Illumination) -->
+    <!-- Étoile Principale (Au sommet du flux) -->
+    <path d="M 330 70 Q 330 120 380 120 Q 330 120 330 170 Q 330 120 280 120 Q 330 120 330 70 Z" fill="url(#starGlow)" />
+    
+    <!-- Étoile Secondaire (Gauche) -->
+    <path d="M 170 160 Q 170 185 195 185 Q 170 185 170 210 Q 170 185 145 185 Q 170 185 170 160 Z" fill="#38BDF8" opacity="0.8" />
+    
+    <!-- Étoile Tertiaire (Haut Gauche, petite) -->
+    <path d="M 230 100 Q 230 112 242 112 Q 230 112 230 124 Q 230 112 218 112 Q 230 112 230 100 Z" fill="#F0ABFC" opacity="0.9" />
+    
+    <!-- Étoile Quaternaire (Droite, moyenne) -->
+    <path d="M 390 200 Q 390 215 405 215 Q 390 215 390 230 Q 390 215 375 215 Q 390 215 390 200 Z" fill="#818CF8" opacity="0.7" />
+
+    <!-- Particules de savoir en suspension -->
+    <circle cx="200" cy="250" r="3" fill="#67E8F9" opacity="0.6" />
+    <circle cx="350" cy="280" r="4" fill="#D946EF" opacity="0.5" />
+    <circle cx="280" cy="200" r="2.5" fill="#FFFFFF" opacity="0.8" />
+  </g>
+
+  <!-- 5. TYPOGRAPHIE (Optionnelle pour l'icône, idéale pour le Splash Screen) -->
+  <text x="256" y="435" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="36" font-weight="800" fill="#FFFFFF" text-anchor="middle" letter-spacing="1.5">
+    Cogni<tspan fill="#38BDF8">Scroll</tspan>
+  </text>
+</svg>

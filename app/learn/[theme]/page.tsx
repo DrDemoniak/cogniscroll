@@ -22,21 +22,33 @@ import type { SavedLesson } from '@/lib/types';
 // ─────────────────────────────────────────────
 function TopicModal({
   topics,
+  doneTopics,
   themeName,
   onSelect,
   onClose,
 }: {
   topics: string[];
+  doneTopics: string[];   // sujets déjà traités dans ce thème
   themeName: string;
   onSelect: (topic: string) => void;
   onClose: () => void;
 }) {
-  const [customTopic, setCustomTopic] = useState('');
-  const [search,      setSearch]      = useState('');
+  const [search,         setSearch]         = useState('');
+  const [shuffledTopics, setShuffledTopics] = useState<string[]>(topics);
 
-  const filtered = topics.filter(t =>
+  // Rafraîchit l'ordre des suggestions (exclut les sujets déjà traités en priorité)
+  const handleShuffle = () => {
+    const available = topics.filter(t => !doneTopics.some(d => d.toLowerCase() === t.toLowerCase()));
+    const done      = topics.filter(t =>  doneTopics.some(d => d.toLowerCase() === t.toLowerCase()));
+    const shuffled  = [...available].sort(() => Math.random() - 0.5);
+    setShuffledTopics([...shuffled, ...done]);
+  };
+
+  const filtered = shuffledTopics.filter(t =>
     t.toLowerCase().includes(search.toLowerCase())
   );
+
+  const isDone = (t: string) => doneTopics.some(d => d.toLowerCase() === t.toLowerCase());
 
   return (
     <div
@@ -52,13 +64,23 @@ function TopicModal({
         <div style={{ padding: 'var(--space-6)', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
             <h2 style={{ margin: 0, fontSize: '1.2rem' }}>🎯 Choisir un sujet</h2>
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={onClose}
-              style={{ fontSize: '1.2rem', padding: 'var(--space-1)' }}
-            >
-              ✕
-            </button>
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={handleShuffle}
+                title="Mélanger la liste"
+                style={{ fontSize: '1rem' }}
+              >
+                🔀
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={onClose}
+                style={{ fontSize: '1.2rem', padding: 'var(--space-1)' }}
+              >
+                ✕
+              </button>
+            </div>
           </div>
           {/* Recherche */}
           <input
@@ -77,19 +99,31 @@ function TopicModal({
           {filtered.length > 0 && (
             <>
               <p className="text-muted text-sm" style={{ marginBottom: 'var(--space-3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.75rem' }}>
-                Sujets suggérés ({filtered.length})
+                Sujets disponibles ({filtered.filter(t => !isDone(t)).length} nouveaux · {filtered.filter(t => isDone(t)).length} déjà faits)
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                {filtered.map(topic => (
-                  <button
-                    key={topic}
-                    className="btn btn-ghost"
-                    style={{ textAlign: 'left', justifyContent: 'flex-start', padding: 'var(--space-3) var(--space-4)' }}
-                    onClick={() => onSelect(topic)}
-                  >
-                    📖 {topic}
-                  </button>
-                ))}
+                {filtered.map(topic => {
+                  const done = isDone(topic);
+                  return (
+                    <button
+                      key={topic}
+                      className="btn btn-ghost"
+                      style={{
+                        textAlign: 'left',
+                        justifyContent: 'flex-start',
+                        padding: 'var(--space-3) var(--space-4)',
+                        opacity: done ? 0.5 : 1,
+                        gap: 'var(--space-2)',
+                      }}
+                      onClick={() => onSelect(topic)}
+                      title={done ? 'Déjà traité — tu peux le refaire à un niveau supérieur' : ''}
+                    >
+                      <span>{done ? '✅' : '📖'}</span>
+                      <span>{topic}</span>
+                      {done && <span style={{ marginLeft: 'auto', fontSize: '0.7rem', color: 'var(--text-muted)' }}>déjà fait</span>}
+                    </button>
+                  );
+                })}
               </div>
             </>
           )}
@@ -368,6 +402,7 @@ export default function ThemePage({ params }: { params: Promise<{ theme: string 
         {showModal && (
           <TopicModal
             topics={themeConfig.suggestedTopics || []}
+            doneTopics={themeLessons.map(l => l.topic || l.content?.topic || '')}
             themeName={themeConfig.name}
             onSelect={generateLesson}
             onClose={() => setShowModal(false)}
