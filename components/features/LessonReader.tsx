@@ -152,7 +152,8 @@ export default function LessonReader({
       sessionStorage.setItem('currentLesson',   JSON.stringify(deeperLesson));
       sessionStorage.setItem('currentLessonId', '');
       sessionStorage.setItem('isFavorite',      'false');
-      router.push(`/learn/${lesson.theme}/lesson`);
+      // On est déjà sur la même URL, router.push() ne force pas le rechargement de la page
+      window.location.reload();
     } catch (err) {
       console.error('[LESSON_READER] Erreur go further:', err);
       alert('Impossible de générer un approfondissement. Réessaie.');
@@ -191,9 +192,9 @@ export default function LessonReader({
         {images[0] && (
           <div style={{ borderRadius: 'var(--radius-xl)', overflow: 'hidden', marginBottom: 'var(--space-6)', position: 'relative' }}>
             <img
-              src={images[0].thumb}
+              src={images[0].url}
               alt={images[0].alt}
-              style={{ width: '100%', height: 240, objectFit: 'cover', display: 'block' }}
+              style={{ width: '100%', height: 'auto', display: 'block' }}
               loading="lazy"
             />
             <a
@@ -230,9 +231,9 @@ export default function LessonReader({
           {i === 1 && images[1] && (
             <div style={{ borderRadius: 'var(--radius-xl)', overflow: 'hidden', marginBottom: 'var(--space-5)', position: 'relative' }}>
               <img
-                src={images[1].thumb}
+                src={images[1].url}
                 alt={images[1].alt}
-                style={{ width: '100%', height: 200, objectFit: 'cover', display: 'block' }}
+                style={{ width: '100%', height: 'auto', display: 'block' }}
                 loading="lazy"
               />
               <a
