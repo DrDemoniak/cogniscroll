@@ -50,20 +50,29 @@ export async function POST(request: NextRequest) {
       : `Génère une fiche de connaissance éducative approfondie en FRANÇAIS sur le sujet suivant.`;
 
     const prompt = `
-Tu es un professeur passionné et vulgarisateur expert. ${promptIntro}
+Tu es un expert technique et analytique. ${promptIntro}
 
 Thématique : ${theme}
 Sujet précis : ${topic}
 
-Règles OBLIGATOIRES :
-- Contenu en français uniquement
-- Ton accessible et engageant (pas trop académique), comme un article de magazine intelligent
-- Inclure des anecdotes, faits surprenants, chiffres clés
-- Durée de lecture cible : 5 à 7 minutes (environ 600 mots de contenu au total)
-- 4 sections, chacune avec du contenu substantiel (minimum 120 mots par section)
-- Chaque section avec 3 à 4 points-clés concrets et mémorables
-- Sources réelles et vérifiables (Wikipedia, encyclopédies, institutions reconnues)
-- Recherche YouTube pertinente pour approfondir
+[CONSIGNES DE STYLE ET DE RÉDACTION - STRICTEMENT OBLIGATOIRES]
+Ton objectif principal est de maximiser la densité d'information. Tu dois me fournir une réponse riche, complète, factuelle et technique. Adopte un style direct, chirurgical et professionnel, en éliminant toute formulation artificielle, pompeuse ou superflue.
+
+1. CE QU'IL FAUT ABSOLUMENT ÉVITER (Bannissement total) :
+- Le verbiage et les tics de langage : N'utilise JAMAIS les formulations suivantes (ni leurs synonymes) : "À l'ère de...", "Dans un monde de plus en plus...", "Au-delà de...", "Ce n'est pas seulement X, c'est un véritable Y", "Il est crucial/essentiel de se rappeler/noter que...", "Un véritable catalyseur / pilier / levier...", "L'architecture invisible / la toile de fond / la danse complexe de...".
+- L'exagération et le ton promotionnel : Reste d'une neutralité absolue. Bannis les adjectifs émotionnels ou grandiloquents (ex: "incroyable", "révolutionnaire", "fascinant", "redoutable").
+- Les phrases de remplissage : Ne fais aucune phrase d'introduction annonçant ce que tu vas dire. Ne fais aucune phrase de conclusion moralisatrice ou qui résume ce qui vient d'être lu.
+- Les métaphores filées et la poésie d'entreprise : Garde un langage littéral. Ne parle pas pour ne rien dire.
+
+2. CE QU'IL FAUT FAIRE :
+- Droit au but : La toute première phrase doit être le début direct de l'explication ou de l'analyse.
+- Densité de l'information : Chaque proposition doit apporter un fait, une donnée, un argument concret ou une étape logique. Si une phrase peut être supprimée sans altérer la compréhension technique, supprime-la.
+- Précision sémantique : Utilise les termes techniques exacts.
+- Structure : Privilégie une hiérarchie stricte pour une lecture rapide et efficace.
+
+Contraintes techniques :
+- 4 sections avec chacune un contenu très dense (minimum 120 mots par section) et 3 à 4 points-clés très spécifiques (pas de généralités).
+- Sources réelles et factuelles (Wikipedia, institutions).
 
 Retourne UNIQUEMENT un JSON valide avec exactement cette structure (sans markdown, pas de \`\`\`json) :
 {
