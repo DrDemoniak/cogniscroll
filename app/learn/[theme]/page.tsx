@@ -35,13 +35,28 @@ function TopicModal({
 }) {
   const [search,         setSearch]         = useState('');
   const [shuffledTopics, setShuffledTopics] = useState<string[]>(topics);
+  const [isRefreshing,   setIsRefreshing]   = useState(false);
 
-  // Rafraîchit l'ordre des suggestions (exclut les sujets déjà traités en priorité)
-  const handleShuffle = () => {
-    const available = topics.filter(t => !doneTopics.some(d => d.toLowerCase() === t.toLowerCase()));
-    const done      = topics.filter(t =>  doneTopics.some(d => d.toLowerCase() === t.toLowerCase()));
-    const shuffled  = [...available].sort(() => Math.random() - 0.5);
-    setShuffledTopics([...shuffled, ...done]);
+  // Demande de nouveaux sujets à l'IA
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const res = await fetch('/api/generate-topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ themeName, doneTopics })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.topics && Array.isArray(data.topics)) {
+          setShuffledTopics(data.topics);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   const filtered = shuffledTopics.filter(t =>
@@ -67,11 +82,12 @@ function TopicModal({
             <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
               <button
                 className="btn btn-ghost btn-sm"
-                onClick={handleShuffle}
-                title="Mélanger la liste"
-                style={{ fontSize: '1rem' }}
+                onClick={handleRefresh}
+                title="Générer de nouveaux sujets avec l'IA"
+                style={{ fontSize: '1rem', opacity: isRefreshing ? 0.5 : 1 }}
+                disabled={isRefreshing}
               >
-                🔀
+                {isRefreshing ? '⏳' : '✨'}
               </button>
               <button
                 className="btn btn-ghost btn-sm"

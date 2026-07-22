@@ -43,7 +43,7 @@ export default function BottomNav() {
       </button>
 
       {/* Quiz espacé */}
-      <Link href="/reviews" className={`bottom-nav-item ${isActive('/reviews') ? 'active' : ''}`}>
+      <Link href="/flashcards" className={`bottom-nav-item ${isActive('/flashcards') ? 'active' : ''}`}>
         <span className="bottom-nav-icon">🧠</span>
         <span className="bottom-nav-label">Quiz</span>
       </Link>

@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { theme, topic, themeId } = body;
+    const { theme, topic, themeId, mode } = body;
 
     // Validation des paramètres
     if (!theme || !topic) {
@@ -33,10 +33,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[API] Génération leçon — thème: ${theme}, sujet: ${topic}`);
+    console.log(`[API] Génération leçon — thème: ${theme}, sujet: ${topic}, mode: ${mode || 'standard'}`);
+
+    // Si on demande un approfondissement, on adapte légèrement le prompt
+    const promptIntro = mode === 'approfondi' 
+      ? `Génère une fiche de connaissance éducative TRES APPROFONDIE (niveau avancé) en FRANÇAIS sur le sujet suivant. C'est une suite d'un article de base.`
+      : `Génère une fiche de connaissance éducative approfondie en FRANÇAIS sur le sujet suivant.`;
 
     const prompt = `
-Tu es un professeur passionné et vulgarisateur expert. Génère une fiche de connaissance éducative approfondie en FRANÇAIS sur le sujet suivant.
+Tu es un professeur passionné et vulgarisateur expert. ${promptIntro}
 
 Thématique : ${theme}
 Sujet précis : ${topic}
@@ -51,13 +56,13 @@ Règles OBLIGATOIRES :
 - Sources réelles et vérifiables (Wikipedia, encyclopédies, institutions reconnues)
 - Recherche YouTube pertinente pour approfondir
 
-Retourne UNIQUEMENT un JSON valide avec exactement cette structure (sans markdown) :
+Retourne UNIQUEMENT un JSON valide avec exactement cette structure (sans markdown, pas de \`\`\`json) :
 {
   "title": "Titre accrocheur et original de la fiche",
   "theme": "${themeId || theme.toLowerCase()}",
   "topic": "${topic}",
   "estimatedMinutes": 6,
-  "difficulty": "débutant",
+  "difficulty": "${mode === 'approfondi' ? 'avancé' : 'débutant'}",
   "imageKeywords": ["mot-clé image 1 en anglais", "mot-clé image 2 en anglais"],
   "sections": [
     {
@@ -100,7 +105,8 @@ imageKeywords : 2 mots-clés en ANGLAIS pour chercher des images pertinentes sur
     // Parse du JSON retourné par Gemini
     let lessonData: any;
     try {
-      lessonData = JSON.parse(text);
+      const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+      lessonData = JSON.parse(cleanText);
     } catch {
       console.error('[API] Erreur parsing JSON Gemini:', text.slice(0, 200));
       return NextResponse.json(
