@@ -11,9 +11,9 @@ import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/layout/AuthGuard';
 import Navbar from '@/components/layout/Navbar';
 import { useAuth } from '@/lib/auth-context';
-import { getRecentLessons } from '@/lib/firestore';
+import { getRecentLessons, getRecentQuizResults } from '@/lib/firestore';
 import { getThemeById } from '@/lib/themes';
-import type { SavedLesson } from '@/lib/types';
+import type { SavedLesson, QuizResult } from '@/lib/types';
 
 export default function HistoryPage() {
   const { user } = useAuth();
@@ -21,9 +21,11 @@ export default function HistoryPage() {
 
   const [lessons,       setLessons]       = useState<SavedLesson[]>([]);
   const [filtered,      setFiltered]      = useState<SavedLesson[]>([]);
+  const [quizResults,   setQuizResults]   = useState<QuizResult[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [themeFilter,   setThemeFilter]   = useState('all');
   const [sortOrder,     setSortOrder]     = useState<'desc' | 'asc'>('desc');
+  const [activeTab,     setActiveTab]     = useState<'lessons' | 'quiz'>('lessons');
 
   // ── Chargement de tout l'historique ──────────────────────────────────────
   useEffect(() => {
@@ -33,15 +35,25 @@ export default function HistoryPage() {
       try {
         // On récupère les 200 dernières leçons (max raisonnable)
         const all = await getRecentLessons(user.uid, 200);
+        const allQuiz = await getRecentQuizResults(user.uid, 200);
+        
         // Tri par date décroissante
         const sorted = all.sort((a, b) => {
           const aDate = a.completedAt?.toDate ? a.completedAt.toDate() : new Date(a.completedAt || 0);
           const bDate = b.completedAt?.toDate ? b.completedAt.toDate() : new Date(b.completedAt || 0);
           return bDate.getTime() - aDate.getTime();
         });
+        
+        const sortedQuiz = allQuiz.sort((a, b) => {
+          const aDate = a.completedAt?.toDate ? a.completedAt.toDate() : new Date(a.completedAt || 0);
+          const bDate = b.completedAt?.toDate ? b.completedAt.toDate() : new Date(b.completedAt || 0);
+          return bDate.getTime() - aDate.getTime();
+        });
+
         setLessons(sorted);
         setFiltered(sorted);
-        console.log('[HISTORY] Leçons chargées:', sorted.length);
+        setQuizResults(sortedQuiz);
+        console.log('[HISTORY] Leçons chargées:', sorted.length, 'Quiz chargés:', sortedQuiz.length);
       } catch (err) {
         console.error('[HISTORY] Erreur chargement:', err);
       } finally {
@@ -94,14 +106,27 @@ export default function HistoryPage() {
 
           {/* ── Header ── */}
           <div style={{ marginBottom: 'var(--space-8)' }}>
-            <h1>📚 Historique des leçons</h1>
-            {!loading && (
-              <p className="text-muted">{filtered.length} leçon{filtered.length > 1 ? 's' : ''} trouvée{filtered.length > 1 ? 's' : ''}</p>
-            )}
+            <h1>📚 Historique</h1>
+            <div style={{ display: 'flex', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+              <button 
+                className={`btn ${activeTab === 'lessons' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setActiveTab('lessons')}
+              >
+                📖 Leçons
+              </button>
+              <button 
+                className={`btn ${activeTab === 'quiz' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setActiveTab('quiz')}
+              >
+                🎯 Quiz
+              </button>
+            </div>
           </div>
 
-          {/* ── Filtres ── */}
-          <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-6)', padding: 'var(--space-4)', background: 'var(--surface-secondary)', borderRadius: 'var(--radius-lg)' }}>
+          {activeTab === 'lessons' && (
+            <>
+              {/* ── Filtres ── */}
+              <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-6)', padding: 'var(--space-4)', background: 'var(--surface-secondary)', borderRadius: 'var(--radius-lg)' }}>
             {/* Filtre thème */}
             <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', flex: 1 }}>
               <button
@@ -198,6 +223,59 @@ export default function HistoryPage() {
               </button>
             </div>
           )}
+          </>
+          )}
+
+          {activeTab === 'quiz' && (
+            <>
+              {loading ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-16)' }}>
+                  <div className="spinner" />
+                </div>
+              ) : quizResults.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {quizResults.map((quiz, i) => {
+                    const tc = getThemeById(quiz.theme);
+                    return (
+                      <div
+                        key={quiz.id}
+                        className="card"
+                        style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', padding: 'var(--space-4)' }}
+                      >
+                        <div style={{
+                          width: 48, height: 48, borderRadius: '50%', background: tc?.gradient || 'var(--surface-secondary)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem', flexShrink: 0,
+                        }}>
+                          {tc?.emoji || '🎯'}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-1)', flexWrap: 'wrap' }}>
+                            <span className="badge badge-surface" style={{ fontSize: '0.7rem' }}>{tc?.name || quiz.theme}</span>
+                            <span className="badge badge-surface" style={{ fontSize: '0.7rem', color: 'var(--accent-gold)' }}>
+                              {'⭐'.repeat(quiz.stars || 0)}{'☆'.repeat(3 - (quiz.stars || 0))}
+                            </span>
+                          </div>
+                          <p style={{ fontWeight: 600, margin: 0, fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {quiz.lessonTitle}
+                          </p>
+                          <p className="text-muted" style={{ margin: 0, fontSize: '0.8rem', marginTop: 2 }}>
+                            Score: {quiz.score} / {quiz.totalQuestions} • {formatDate(quiz.completedAt)}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="empty-state card card-glass" style={{ padding: 'var(--space-16)', textAlign: 'center' }}>
+                  <div className="empty-state-icon">🎯</div>
+                  <div className="empty-state-title">Aucun quiz terminé</div>
+                  <p className="empty-state-desc">Tu n'as pas encore fait de quiz.</p>
+                </div>
+              )}
+            </>
+          )}
+
         </main>
       </div>
     </AuthGuard>

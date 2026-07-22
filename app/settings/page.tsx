@@ -13,7 +13,7 @@ import { useToast } from '@/components/ui/Toast';
 import { updateSettings, updateUserProfile } from '@/lib/firestore';
 
 export default function SettingsPage() {
-  const { user, userProfile, refreshProfile } = useAuth();
+  const { user, userProfile, refreshProfile, logout } = useAuth();
   const { addToast } = useToast();
 
   const [dailyGoal,   setDailyGoal]   = useState(2);
@@ -180,14 +180,23 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* ── Zone de danger ── */}
+          {/* ── Compte & Zone de danger ── */}
           <div className="settings-section">
-            <div className="settings-section-title" style={{ color: 'var(--accent-red)' }}>Zone de danger</div>
+            <div className="settings-section-title" style={{ color: 'var(--accent-red)' }}>Compte & Données</div>
             <div className="settings-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+              <button 
+                className="btn btn-secondary btn-sm" 
+                onClick={logout}
+                style={{ width: '100%', justifyContent: 'center' }}
+              >
+                🚪 Se déconnecter
+              </button>
+            </div>
+            <div className="settings-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
               <p className="text-sm text-muted">
                 La réinitialisation supprimera définitivement ta progression (XP, badges, leçons).
               </p>
-              <button className="btn btn-danger btn-sm" onClick={handleResetData}>
+              <button className="btn btn-danger btn-sm" onClick={handleResetData} style={{ width: '100%', justifyContent: 'center' }}>
                 🗑️ Réinitialiser ma progression
               </button>
             </div>

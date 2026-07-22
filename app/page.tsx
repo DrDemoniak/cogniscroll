@@ -88,23 +88,38 @@ export default function LandingPage() {
 
         {/* Section How It Works */}
         <section className="how-it-works-section w-full mt-16 mb-16">
-          <h3 className="text-2xl font-semibold mb-6 text-center">Comment ça marche ?</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
-            <div>
-              <div className="text-4xl font-bold text-primary mb-2">1</div>
-              <h4 className="font-semibold">Choisis un thème</h4>
-              <p className="text-sm">Sélectionne ce qui t'intéresse aujourd'hui.</p>
+          <h3 className="text-3xl font-bold mb-10 text-center" style={{ background: 'linear-gradient(90deg, var(--primary), var(--secondary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', textAlign: 'center', fontSize: '2rem', marginBottom: 'var(--space-10)' }}>
+            Comment ça marche ?
+          </h3>
+          <div className="how-it-works-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 'var(--space-6)', width: '100%' }}>
+            
+            <div className="card card-glass" style={{ padding: 'var(--space-8)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-4)', position: 'relative', overflow: 'hidden', textAlign: 'center' }}>
+              <div style={{ position: 'absolute', top: '-20px', right: '-20px', fontSize: '8rem', opacity: 0.05, fontWeight: 900 }}>1</div>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--secondary))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '1.8rem', fontWeight: 'bold', boxShadow: '0 8px 16px rgba(var(--primary-rgb), 0.3)' }}>
+                1
+              </div>
+              <h4 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>Choisis un thème</h4>
+              <p className="text-muted" style={{ margin: 0, lineHeight: 1.5 }}>Sélectionne ce qui t'intéresse aujourd'hui parmi nos 8 domaines d'exploration.</p>
             </div>
-            <div>
-              <div className="text-4xl font-bold text-primary mb-2">2</div>
-              <h4 className="font-semibold">Lis ta leçon</h4>
-              <p className="text-sm">Une pilule de savoir de 2 minutes.</p>
+
+            <div className="card card-glass" style={{ padding: 'var(--space-8)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-4)', position: 'relative', overflow: 'hidden', textAlign: 'center' }}>
+              <div style={{ position: 'absolute', top: '-20px', right: '-20px', fontSize: '8rem', opacity: 0.05, fontWeight: 900 }}>2</div>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent-gold), var(--accent-red))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '1.8rem', fontWeight: 'bold' }}>
+                2
+              </div>
+              <h4 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>Lis ta leçon</h4>
+              <p className="text-muted" style={{ margin: 0, lineHeight: 1.5 }}>Une pilule de savoir de 2 minutes générée sur-mesure par l'IA Gemini.</p>
             </div>
-            <div>
-              <div className="text-4xl font-bold text-primary mb-2">3</div>
-              <h4 className="font-semibold">Teste-toi</h4>
-              <p className="text-sm">Ancre tes connaissances avec un quiz rapide.</p>
+
+            <div className="card card-glass" style={{ padding: 'var(--space-8)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-4)', position: 'relative', overflow: 'hidden', textAlign: 'center' }}>
+              <div style={{ position: 'absolute', top: '-20px', right: '-20px', fontSize: '8rem', opacity: 0.05, fontWeight: 900 }}>3</div>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent-green), var(--primary))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '1.8rem', fontWeight: 'bold' }}>
+                3
+              </div>
+              <h4 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>Teste-toi</h4>
+              <p className="text-muted" style={{ margin: 0, lineHeight: 1.5 }}>Ancre tes connaissances avec un quiz rapide et nos flash cards (SM-2).</p>
             </div>
+
           </div>
         </section>
 

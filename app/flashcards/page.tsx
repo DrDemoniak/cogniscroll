@@ -12,7 +12,7 @@ import AuthGuard from '@/components/layout/AuthGuard';
 import Navbar from '@/components/layout/Navbar';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/ui/Toast';
-import { getDueReviewCards, updateReviewCard } from '@/lib/firestore';
+import { getDueReviewCards, updateReviewCard, getAllReviewCards } from '@/lib/firestore';
 import type { ReviewCard } from '@/lib/types';
 
 // ── Algorithme SM-2 simplifié ──────────────────────────────────────────────
@@ -56,18 +56,27 @@ export default function FlashCardsPage() {
   const [answered,      setAnswered]      = useState(0);
   const [session,       setSession]       = useState<{ correct: number; wrong: number }>({ correct: 0, wrong: 0 });
   const [done,          setDone]          = useState(false);
+  const [isPractice,    setIsPractice]    = useState(false);
 
-  // ── Chargement des cartes dues ──────────────────────────────────────────
+  // ── Chargement des cartes dues ou pratique ────────────────────────────────
   useEffect(() => {
     async function load() {
       if (!user) return;
-      console.log('[FLASHCARDS] Chargement cartes dues pour:', user.uid);
       try {
-        const due = await getDueReviewCards(user.uid);
-        // Mélange aléatoire
+        let due = await getDueReviewCards(user.uid);
+        
+        if (due.length === 0) {
+          // Si rien à réviser, on lance une pratique libre avec max 10 cartes au hasard
+          const allCards = await getAllReviewCards(user.uid, 50);
+          due = [...allCards].sort(() => Math.random() - 0.5).slice(0, 10);
+          if (due.length > 0) {
+            setIsPractice(true);
+            addToast('Rien à réviser ! Lancement du mode Pratique libre', 'success');
+          }
+        }
+        
         const shuffled = [...due].sort(() => Math.random() - 0.5);
         setCards(shuffled);
-        console.log('[FLASHCARDS] Cartes dues:', shuffled.length);
       } catch (err) {
         console.error('[FLASHCARDS] Erreur chargement:', err);
         addToast('Erreur de chargement des flash cards', 'error');

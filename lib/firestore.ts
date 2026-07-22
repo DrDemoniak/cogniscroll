@@ -297,6 +297,16 @@ export async function getDueReviewCards(uid: string): Promise<ReviewCard[]> {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ReviewCard);
 }
 
+/** Récupère toutes les cartes de révision pour la pratique libre */
+export async function getAllReviewCards(uid: string, maxResults = 50): Promise<ReviewCard[]> {
+  const q = query(
+    collection(db, 'users', uid, 'reviews'),
+    limit(maxResults)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ReviewCard);
+}
+
 /** Met à jour une carte de révision après réponse */
 export async function updateReviewCard(
   uid: string,
