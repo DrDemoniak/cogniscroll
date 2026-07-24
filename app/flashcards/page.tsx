@@ -12,11 +12,10 @@ import AuthGuard from '@/components/layout/AuthGuard';
 import Navbar from '@/components/layout/Navbar';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/ui/Toast';
-import { getDueReviewCards, updateReviewCard, getAllReviewCards } from '@/lib/firestore';
+import { getDueReviewCards, updateReviewCard, getAllReviewCards, getRecentLessons, addReviewCards, addXP } from '@/lib/firestore';
 import type { ReviewCard } from '@/lib/types';
 
 // ── Algorithme SM-2 simplifié ──────────────────────────────────────────────
-// quality: 5 = parfait, 3 = correct avec hésitation, 1 = raté
 function sm2(card: ReviewCard, quality: 1 | 3 | 5): Partial<ReviewCard> {
   let { interval, easeFactor, repetitions } = card;
 
@@ -30,7 +29,6 @@ function sm2(card: ReviewCard, quality: 1 | 3 | 5): Partial<ReviewCard> {
     interval = 1;
   }
 
-  // Ajuste le facteur de facilité (min 1.3)
   easeFactor = Math.max(1.3, easeFactor + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
 
   const nextDate = new Date();
@@ -49,34 +47,70 @@ export default function FlashCardsPage() {
   const router          = useRouter();
   const { addToast }    = useToast();
 
-  const [cards,         setCards]         = useState<ReviewCard[]>([]);
+  const [cards,         setCards]         = useState<(ReviewCard & { isGenerated?: boolean })[]>([]);
   const [currentIndex,  setCurrentIndex]  = useState(0);
   const [isFlipped,     setIsFlipped]     = useState(false);
   const [loading,       setLoading]       = useState(true);
-  const [answered,      setAnswered]      = useState(0);
   const [session,       setSession]       = useState<{ correct: number; wrong: number }>({ correct: 0, wrong: 0 });
   const [done,          setDone]          = useState(false);
-  const [isPractice,    setIsPractice]    = useState(false);
+  const [xpEarned,      setXpEarned]      = useState(0);
 
-  // ── Chargement des cartes dues ou pratique ────────────────────────────────
+  // ── Chargement des cartes dues + génération dynamique ────────────────────
   useEffect(() => {
     async function load() {
       if (!user) return;
+      console.log('[FLASHCARDS] Chargement des cartes pour:', user.uid);
       try {
-        let due = await getDueReviewCards(user.uid);
-        
-        if (due.length === 0) {
-          // Si rien à réviser, on lance une pratique libre avec max 10 cartes au hasard
-          const allCards = await getAllReviewCards(user.uid, 50);
-          due = [...allCards].sort(() => Math.random() - 0.5).slice(0, 10);
-          if (due.length > 0) {
-            setIsPractice(true);
-            addToast('Rien à réviser ! Lancement du mode Pratique libre', 'success');
+        const due = await getDueReviewCards(user.uid);
+        const recentLessons = await getRecentLessons(user.uid, 8);
+
+        let dynamicCards: (ReviewCard & { isGenerated?: boolean })[] = [];
+
+        if (recentLessons.length > 0) {
+          console.log('[FLASHCARDS] Génération de cartes dynamiques pour', recentLessons.length, 'leçons récentes');
+          try {
+            const res = await fetch('/api/generate-flashcards', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ recentLessons }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.flashcards && Array.isArray(data.flashcards)) {
+                dynamicCards = data.flashcards.map((fc: any, i: number) => ({
+                  id: `gen_${Date.now()}_${i}`,
+                  uid: user.uid,
+                  question: fc.question,
+                  options: fc.options || [fc.answer, 'Option B', 'Option C', 'Option D'],
+                  correctIndex: fc.correctIndex || 0,
+                  explanation: fc.explanation || fc.answer,
+                  theme: fc.theme || 'Général',
+                  lessonId: fc.lessonTitle || 'recent',
+                  nextReviewAt: new Date().toISOString().split('T')[0],
+                  interval: 1,
+                  easeFactor: 2.5,
+                  repetitions: 0,
+                  isGenerated: true,
+                }));
+              }
+            }
+          } catch (genErr) {
+            console.error('[FLASHCARDS] Erreur lors de la génération dynamique:', genErr);
           }
         }
-        
-        const shuffled = [...due].sort(() => Math.random() - 0.5);
-        setCards(shuffled);
+
+        // Fusionne les cartes dues et les cartes dynamiques (en évitant les doublons)
+        const combined = [...due, ...dynamicCards];
+
+        if (combined.length === 0) {
+          // Secours si aucune leçon n'existe encore
+          const allCards = await getAllReviewCards(user.uid, 10);
+          setCards(allCards);
+        } else {
+          // Mélange aléatoire
+          const shuffled = [...combined].sort(() => Math.random() - 0.5);
+          setCards(shuffled);
+        }
       } catch (err) {
         console.error('[FLASHCARDS] Erreur chargement:', err);
         addToast('Erreur de chargement des flash cards', 'error');
@@ -101,19 +135,43 @@ export default function FlashCardsPage() {
     const isCorrect = quality >= 3;
     setSession(s => ({ ...s, correct: s.correct + (isCorrect ? 1 : 0), wrong: s.wrong + (isCorrect ? 0 : 1) }));
 
-    // Met à jour la carte avec SM-2
-    const updates = sm2(currentCard, quality);
-    try {
-      await updateReviewCard(user.uid, currentCard.id, updates);
-      console.log(`[FLASHCARDS] Carte ${currentCard.id} mise à jour: interval=${updates.interval}j`);
-    } catch (err) {
-      console.error('[FLASHCARDS] Erreur mise à jour carte:', err);
+    if (isCorrect) {
+      setXpEarned(x => x + 3);
     }
 
-    setAnswered(a => a + 1);
+    try {
+      if (!currentCard.isGenerated) {
+        // Carte existante : mise à jour SM-2 dans Firestore
+        const updates = sm2(currentCard, quality);
+        await updateReviewCard(user.uid, currentCard.id, updates);
+      } else if (quality === 1) {
+        // Carte dynamique non maîtrisée : enregistrement en base de données pour répétition SM-2 !
+        console.log('[FLASHCARDS] Carte dynamique non maîtrisée -> ajout aux révisions SM-2');
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        await addReviewCards(user.uid, [{
+          uid: user.uid,
+          question: currentCard.question,
+          options: currentCard.options,
+          correctIndex: currentCard.correctIndex,
+          explanation: currentCard.explanation,
+          theme: currentCard.theme,
+          lessonId: currentCard.lessonId,
+          nextReviewAt: tomorrow.toISOString().split('T')[0],
+          interval: 1,
+          easeFactor: 2.5,
+          repetitions: 0,
+        }]);
+      }
+    } catch (err) {
+      console.error('[FLASHCARDS] Erreur traitement réponse:', err);
+    }
 
     // Passer à la suivante
     if (currentIndex + 1 >= cards.length) {
+      if (xpEarned + (isCorrect ? 3 : 0) > 0) {
+        addXP(user.uid, xpEarned + (isCorrect ? 3 : 0)).catch(console.error);
+      }
       setDone(true);
     } else {
       setIsFlipped(false);
