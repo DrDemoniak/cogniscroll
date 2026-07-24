@@ -1,10 +1,7 @@
 'use client';
 import React from 'react';
 
-// MOCK
-const BADGES = [
-  { id: 'first_blood', name: 'Premier sang', description: 'Première leçon', emoji: '🩸', rarity: 'commun' }
-];
+import { BADGES } from '@/lib/gamification';
 
 /**
  * BadgeCollection

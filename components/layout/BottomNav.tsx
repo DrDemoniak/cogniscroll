@@ -42,8 +42,8 @@ export default function BottomNav() {
         <span style={{ fontSize: '1.6rem', lineHeight: 1, color: '#fff' }}>＋</span>
       </button>
 
-      {/* Quiz espacé */}
-      <Link href="/flashcards" className={`bottom-nav-item ${isActive('/flashcards') ? 'active' : ''}`}>
+      {/* Quiz / Révisions */}
+      <Link href="/reviews" className={`bottom-nav-item ${isActive('/reviews') ? 'active' : ''}`}>
         <span className="bottom-nav-icon">🧠</span>
         <span className="bottom-nav-label">Quiz</span>
       </Link>

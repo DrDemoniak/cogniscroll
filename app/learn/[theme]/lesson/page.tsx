@@ -127,19 +127,22 @@ export default function LessonPage() {
     }
   }, [user, lessonData, isCompleted, params.theme, userProfile, refreshProfile, addToast]);
 
+  const [hasGoneDeeper, setHasGoneDeeper] = useState(false);
+
   // ── Passage au quiz ────────────────────────────────────────────────────
   const handleGoToQuiz = useCallback(() => {
     if (!lessonData) return;
-    console.log('[LESSON] Passage au quiz');
+    console.log('[LESSON] Passage au quiz. count:', hasGoneDeeper ? 6 : 4);
     sessionStorage.setItem('quizLesson', JSON.stringify({
       lessonId,
       lessonTitle: lessonData.title,
       lessonSummary: lessonData.summary,
       lessonSections: lessonData.sections,
       theme: params.theme,
+      count: hasGoneDeeper ? 6 : 4,
     }));
     router.push('/quiz');
-  }, [lessonData, lessonId, params.theme, router]);
+  }, [lessonData, lessonId, params.theme, router, hasGoneDeeper]);
 
   // ── Rendu de chargement ────────────────────────────────────────────────
   if (!lessonData) {
@@ -162,6 +165,7 @@ export default function LessonPage() {
             isFavorite={isFavorite}
             onFavoriteToggle={handleFavoriteToggle}
             onComplete={handleLessonComplete}
+            onGoFurtherUnlocked={() => setHasGoneDeeper(true)}
           />
 
           {/* Bouton quiz visible après complétion */}

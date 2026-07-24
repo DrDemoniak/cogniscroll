@@ -30,7 +30,7 @@ export default function Navbar() {
           <Link href="/learn"     className={`navbar-link ${pathname?.startsWith('/learn') ? 'active' : ''}`}>Apprendre</Link>
           <Link href="/history"   className={`navbar-link ${pathname === '/history' ? 'active' : ''}`}>Historique</Link>
           <Link href="/favorites" className={`navbar-link ${pathname === '/favorites' ? 'active' : ''}`}>Favoris</Link>
-          <Link href="/flashcards" className={`navbar-link ${pathname === '/flashcards' ? 'active' : ''}`}>Révisions</Link>
+          <Link href="/reviews"    className={`navbar-link ${pathname === '/reviews' ? 'active' : ''}`}>Révisions</Link>
           <Link href="/profile"   className={`navbar-link ${pathname === '/profile' ? 'active' : ''}`}>Profil</Link>
         </div>
         <div className="navbar-actions">

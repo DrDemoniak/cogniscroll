@@ -39,6 +39,7 @@ interface LessonReaderProps {
   isFavorite: boolean;
   onFavoriteToggle: () => void;
   onComplete: () => void;
+  onGoFurtherUnlocked?: () => void;
 }
 
 export default function LessonReader({
@@ -47,6 +48,7 @@ export default function LessonReader({
   isFavorite,
   onFavoriteToggle,
   onComplete,
+  onGoFurtherUnlocked,
 }: LessonReaderProps) {
   const router  = useRouter();
   const params  = useParams<{ theme: string }>();
@@ -129,11 +131,26 @@ export default function LessonReader({
     }
   }, [isPlaying, lesson]);
 
+  const [deeperSections, setDeeperSections] = useState<any[] | null>(null);
+  const [isDeeperExpanded, setIsDeeperExpanded] = useState(false);
+
   // ── Bouton "Aller plus loin" ────────────────────────────────────────────
   const handleGoFurther = useCallback(async () => {
+    if (isDeeperExpanded) {
+      // Toggle
+      setIsDeeperExpanded(false);
+      return;
+    }
+
+    if (deeperSections) {
+      setIsDeeperExpanded(true);
+      if (onGoFurtherUnlocked) onGoFurtherUnlocked();
+      return;
+    }
+
     if (goFurtherLoading) return;
     setGoFurtherLoading(true);
-    console.log('[LESSON_READER] Aller plus loin sur:', lesson.topic);
+    console.log('[LESSON_READER] Chargement approfondissement déroulant pour:', lesson.topic);
 
     try {
       const res = await fetch('/api/generate-lesson', {
@@ -141,26 +158,27 @@ export default function LessonReader({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           theme: lesson.theme,
-          topic: `${lesson.topic} — approfondissement avancé`,
+          topic: `${lesson.topic} — détails et faits avancés`,
           themeId: lesson.theme,
           mode: 'approfondi',
         }),
       });
       if (!res.ok) throw new Error('API error');
-      const { lesson: deeperLesson } = await res.json();
+      const { lesson: deeperData } = await res.json();
 
-      sessionStorage.setItem('currentLesson',   JSON.stringify(deeperLesson));
-      sessionStorage.setItem('currentLessonId', '');
-      sessionStorage.setItem('isFavorite',      'false');
-      // On est déjà sur la même URL, router.push() ne force pas le rechargement de la page
-      window.location.reload();
+      if (deeperData?.sections) {
+        setDeeperSections(deeperData.sections);
+        setIsDeeperExpanded(true);
+        console.log('[LESSON_READER] Approfondissement déroulé avec succès');
+        if (onGoFurtherUnlocked) onGoFurtherUnlocked();
+      }
     } catch (err) {
       console.error('[LESSON_READER] Erreur go further:', err);
-      alert('Impossible de générer un approfondissement. Réessaie.');
+      alert('Impossible de charger l\'approfondissement. Réessaie.');
     } finally {
       setGoFurtherLoading(false);
     }
-  }, [lesson, router, goFurtherLoading]);
+  }, [lesson, goFurtherLoading, deeperSections, isDeeperExpanded, onGoFurtherUnlocked]);
 
   // ── Lien YouTube ────────────────────────────────────────────────────────
   const youtubeUrl = (lesson as any).youtubeQuery
@@ -313,6 +331,32 @@ export default function LessonReader({
         </div>
       )}
 
+      {/* ── Bloc d'approfondissement déroulé ── */}
+      {isDeeperExpanded && deeperSections && (
+        <div style={{
+          marginTop: 'var(--space-6)',
+          marginBottom: 'var(--space-8)',
+          padding: 'var(--space-6)',
+          background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(147, 51, 234, 0.08))',
+          border: '1.5px solid var(--primary)',
+          borderRadius: 'var(--radius-xl)',
+          animation: 'fadeIn 0.3s ease-in-out'
+        }}>
+          <h3 style={{ fontSize: '1.2rem', color: 'var(--primary)', marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            🚀 Approfondissement sur ce sujet
+          </h3>
+          {deeperSections.map((sec: any, idx: number) => (
+            <div key={idx} style={{ marginBottom: 'var(--space-5)' }}>
+              <h4 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: 'var(--space-2)' }}>{sec.title}</h4>
+              <p style={{ lineHeight: 1.8, color: 'var(--text-secondary)' }}>{sec.content}</p>
+            </div>
+          ))}
+          <p className="text-sm badge badge-primary" style={{ marginTop: 'var(--space-2)' }}>
+            💡 Quiz étendu à 6 questions débloqué !
+          </p>
+        </div>
+      )}
+
       {/* ── CTAs finaux ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', paddingBottom: 'var(--space-10)', alignItems: 'stretch' }}>
         <button onClick={onComplete} className="btn btn-primary btn-lg" style={{ justifyContent: 'center' }}>
@@ -324,7 +368,7 @@ export default function LessonReader({
           className="btn btn-secondary btn-lg"
           style={{ justifyContent: 'center' }}
         >
-          {goFurtherLoading ? '⏳ Génération...' : '🚀 Aller plus loin sur ce sujet'}
+          {goFurtherLoading ? '⏳ Génération...' : isDeeperExpanded ? '▲ Masquer l\'approfondissement' : '🚀 Aller plus loin sur ce sujet'}
         </button>
       </div>
     </div>

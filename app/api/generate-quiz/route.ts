@@ -21,24 +21,65 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { lessonTitle, lessonSummary, lessonSections } = body;
+    const { lessonTitle, lessonSummary, lessonSections, recentLessons, count } = body;
 
-    if (!lessonTitle || !lessonSections) {
-      return NextResponse.json(
-        { error: 'Paramètres manquants : lessonTitle et lessonSections requis' },
-        { status: 400 }
-      );
+    const numQuestions = count || 4;
+
+    let prompt = '';
+
+    if (recentLessons && Array.isArray(recentLessons) && recentLessons.length > 0) {
+      // Quiz de révision global basé sur plusieurs leçons récentes
+      const lessonsSummary = recentLessons.map((l: any, i: number) => {
+        const title = l.content?.title || l.topic || `Leçon ${i+1}`;
+        const theme = l.theme || '';
+        const summary = l.content?.summary || '';
+        return `- ${title} (${theme}) : ${summary}`;
+      }).join('\n');
+
+      console.log('[API] Génération d\'un quiz de révision global pour', recentLessons.length, 'leçons récentes');
+
+      prompt = `
+Tu es un professeur expert. Génère un quiz de révision général de 6 questions QCM en FRANÇAIS basées sur ces leçons révisées récemment :
+
+${lessonsSummary}
+
+Règles OBLIGATOIRES :
+- Exactement 6 questions
+- Distribue les questions de manière équilibrée sur les différentes leçons
+- 4 options de réponse chacune (A, B, C, D)
+- Exactement 1 bonne réponse par question (correctIndex de 0 à 3)
+- Explication claire pour la bonne réponse
+- En FRANÇAIS uniquement
+
+Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) :
+{
+  "questions": [
+    {
+      "question": "La question posée ?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctIndex": 0,
+      "explanation": "Explication de la réponse."
     }
+  ]
+}
+`;
+    } else {
+      if (!lessonTitle || !lessonSections) {
+        return NextResponse.json(
+          { error: 'Paramètres manquants : lessonTitle et lessonSections requis' },
+          { status: 400 }
+        );
+      }
 
-    // Construit un résumé de la leçon pour le contexte Gemini
-    const lessonContext = lessonSections
-      .map((s: any) => `${s.title}: ${s.content.slice(0, 300)}`)
-      .join('\n');
+      // Construit un résumé de la leçon pour le contexte Gemini
+      const lessonContext = lessonSections
+        .map((s: any) => `${s.title}: ${s.content?.slice(0, 300) || s.content}`)
+        .join('\n');
 
-    console.log('[API] Génération quiz pour:', lessonTitle);
+      console.log(`[API] Génération quiz pour "${lessonTitle}" (${numQuestions} questions)`);
 
-    const prompt = `
-Tu es un créateur de quiz pédagogique expert. Génère 4 questions à choix multiples en FRANÇAIS basées sur cette leçon.
+      prompt = `
+Tu es un créateur de quiz pédagogique expert. Génère ${numQuestions} questions à choix multiples en FRANÇAIS basées sur cette leçon.
 
 Titre de la leçon : ${lessonTitle}
 Résumé : ${lessonSummary || ''}
@@ -46,7 +87,7 @@ Contenu :
 ${lessonContext}
 
 Règles OBLIGATOIRES :
-- 4 questions exactement
+- ${numQuestions} questions exactement
 - 4 options de réponse chacune (A, B, C, D)
 - Exactement 1 bonne réponse par question
 - Les mauvaises réponses doivent être plausibles (pas triviales)
@@ -61,13 +102,14 @@ Retourne UNIQUEMENT un JSON valide (sans markdown) :
       "question": "La question posée ?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "correctIndex": 0,
-      "explanation": "Explication détaillée de pourquoi cette réponse est correcte, et éventuellement pourquoi les autres sont incorrectes."
+      "explanation": "Explication détaillée de pourquoi cette réponse est correcte."
     }
   ]
 }
 
 correctIndex est l'index (0-3) de la bonne réponse dans le tableau options.
 `;
+    }
 
     const result = await model.generateContent(prompt);
     const text = result.response.text();

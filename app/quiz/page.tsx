@@ -46,17 +46,17 @@ export default function QuizPage() {
         return;
       }
 
-      const { lessonId, lessonTitle, lessonSummary, lessonSections, theme } = JSON.parse(raw);
+      const { lessonId, lessonTitle, lessonSummary, lessonSections, theme, count } = JSON.parse(raw);
       setQuizMeta({ lessonId, theme, lessonTitle });
       // Récupérer le statut favori actuel depuis sessionStorage
       setIsFavorite(sessionStorage.getItem('isFavorite') === 'true');
 
-      console.log('[QUIZ] Génération du quiz pour:', lessonTitle);
+      console.log('[QUIZ] Génération du quiz pour:', lessonTitle, 'count:', count || 4);
       try {
         const res = await fetch('/api/generate-quiz', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lessonTitle, lessonSummary, lessonSections }),
+          body: JSON.stringify({ lessonTitle, lessonSummary, lessonSections, count: count || 4 }),
         });
 
         if (!res.ok) throw new Error('Erreur API quiz');
