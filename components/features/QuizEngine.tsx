@@ -54,20 +54,20 @@ export default function QuizEngine({ questions, onComplete, theme }: { questions
     <div className="quiz-container">
       <div className="progress-bar"><div className="progress-bar-fill" style={{width: `${progress}%`}}></div></div>
       
-      {/* Affichage du schéma s'il est présent et valide */}
+      {/* Affichage du schéma en pleine largeur (Full-Width sans aucune coupure) */}
       {q.imageUrl && !hasImgError && (
-        <div style={{ margin: 'var(--space-4) 0', textAlign: 'center', maxHeight: 280, overflow: 'hidden', borderRadius: 'var(--radius-lg)', background: 'var(--surface-secondary, #f8fafc)', padding: 'var(--space-2)', border: '1px solid var(--border-color, #e2e8f0)' }}>
+        <div style={{ width: '100%', margin: 'var(--space-4) 0', textAlign: 'center', borderRadius: 'var(--radius-lg)', background: 'var(--surface-secondary, #f8fafc)', padding: 'var(--space-3)', border: '1px solid var(--border-color, #e2e8f0)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
           <img
             src={q.imageUrl}
             alt="Schéma associé à la question"
             onLoad={() => {
-              console.log(`[QUIZ_ENGINE] Schéma affiché avec succès pour la question ${currentIdx + 1} !`);
+              console.log(`[QUIZ_ENGINE] Schéma HD affiché en pleine largeur pour la question ${currentIdx + 1} !`);
             }}
             onError={(e) => {
               console.warn('[QUIZ_ENGINE] Image non lisible par le navigateur:', e);
               setHasImgError(true);
             }}
-            style={{ maxWidth: '100%', maxHeight: 270, objectFit: 'contain', borderRadius: 'var(--radius-md)' }}
+            style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 'var(--radius-md)', objectFit: 'contain' }}
           />
         </div>
       )}

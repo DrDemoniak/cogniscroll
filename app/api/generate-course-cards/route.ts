@@ -99,6 +99,12 @@ async function processExtractedPdfImage(img: any): Promise<string | null> {
 
     // Si c'est un objet unpdf avec width, height et data (RGBA raw pixels)
     if (img && img.data && (img.width || img.data.byteLength)) {
+      // Filtrage des puces/icônes parasites (taille inférieure à 120x120px)
+      if (img.width && img.height && (img.width < 120 || img.height < 120)) {
+        console.log(`[IMAGE_CONVERTER] Image trop petite ignorée (${img.width}x${img.height} px) — élimination des icônes/logos parasites.`);
+        return null;
+      }
+
       const rawBuffer = Buffer.from(img.data);
       if (
         (rawBuffer.length > 2000 && rawBuffer[0] === 0xff && rawBuffer[1] === 0xd8 && rawBuffer[2] === 0xff) ||
@@ -112,7 +118,7 @@ async function processExtractedPdfImage(img: any): Promise<string | null> {
         try {
           const jimpImg = new Jimp({ width: img.width, height: img.height, data: rawBuffer });
           const pngBuffer = await jimpImg.getBuffer('image/png');
-          console.log(`[IMAGE_CONVERTER] Pixels RGBA (${img.width}x${img.height}) convertis avec succès en PNG valide (${pngBuffer.length} octets) !`);
+          console.log(`[IMAGE_CONVERTER] Pixels RGBA HD (${img.width}x${img.height}) convertis avec succès en PNG HD (${pngBuffer.length} octets) !`);
           return `data:image/png;base64,${pngBuffer.toString('base64')}`;
         } catch (jimpErr) {
           console.warn('[IMAGE_CONVERTER] Erreur encodage Jimp pixels RGBA:', jimpErr);
@@ -271,8 +277,9 @@ export async function POST(request: NextRequest) {
     }
 
     const hasImagesPrompt = extractedImages.length > 0
-      ? `- ${extractedImages.length} schémas/illustrations ont été extraits du document PDF (index de 0 à ${extractedImages.length - 1}). Si une question concerne directement la lecture, le repérage ou l'analyse d'un schéma du cours, inclut le champ \`imageIndex: N\` (ex: \`imageIndex: 0\`).
-- Pour découper précisément le schéma dans l'image, fournis le champ \`boundingBox: [ymin, xmin, ymax, xmax]\` (coordonnées normalisées de 0 à 1000 encadrant uniquement la figure/schéma sans les marges blanches).`
+      ? `- ${extractedImages.length} schémas/illustrations ont été extraits du document PDF (index de 0 à ${extractedImages.length - 1}).
+- ATTENTION : Ne sélectionne QUE les VRAIS schémas explicatifs, mécanismes biologiques/médicaux ou diagrammes pédagogiques majeurs du cours ! Exclus STRICTEMENT les puces graphiques, logos d'université, en-têtes ou illustrations décoratives sans valeur pédagogique directe !
+- Si une question concerne un vrai schéma explicatif du cours, inclut le champ \`imageIndex: N\` (ex: \`imageIndex: 0\`) et la \`boundingBox: [ymin, xmin, ymax, xmax]\` (coordonnées normalisées de 0 à 1000 encadrant uniquement la figure sans les textes environnants).`
       : `- AUCUNE image matricielle autonome n'a été extraite (le cours utilise des schémas dessinés en formes/textes vectoriels PowerPoint/Word). Pour au moins 2 questions portant sur les mécanismes ou diagrammes clés du cours, génère le champ \`svgSchema: "<svg viewBox='0 0 500 300' xmlns='http://www.w3.org/2000/svg'>...</svg>"\` représentant un schéma vectoriel SVG schématique, propre, coloré, clair et explicatif résumant la notion.`;
 
     const textContextPrompt = courseText.trim()

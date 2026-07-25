@@ -394,14 +394,14 @@ export default function CustomCoursesPage() {
                               Question
                             </span>
                             {activeSession.course.questions[fcIndex].imageUrl && (
-                              <div style={{ marginBottom: 'var(--space-3)', maxHeight: 160, overflow: 'hidden', borderRadius: 'var(--radius-md)' }}>
+                              <div style={{ marginBottom: 'var(--space-3)', width: '100%', borderRadius: 'var(--radius-md)' }}>
                                 <img
                                   src={activeSession.course.questions[fcIndex].imageUrl}
-                                  alt=""
+                                  alt="Schéma"
                                   onError={(e) => {
                                     (e.currentTarget.parentElement as HTMLElement).style.display = 'none';
                                   }}
-                                  style={{ width: '100%', maxHeight: 160, objectFit: 'contain' }}
+                                  style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 'var(--radius-md)', objectFit: 'contain' }}
                                 />
                               </div>
                             )}
@@ -417,14 +417,14 @@ export default function CustomCoursesPage() {
                               Réponse
                             </span>
                             {activeSession.course.questions[fcIndex].imageUrl && (
-                              <div style={{ marginBottom: 'var(--space-2)', maxHeight: 120, overflow: 'hidden', borderRadius: 'var(--radius-md)' }}>
+                              <div style={{ marginBottom: 'var(--space-2)', width: '100%', borderRadius: 'var(--radius-md)' }}>
                                 <img
                                   src={activeSession.course.questions[fcIndex].imageUrl}
-                                  alt=""
+                                  alt="Schéma"
                                   onError={(e) => {
                                     (e.currentTarget.parentElement as HTMLElement).style.display = 'none';
                                   }}
-                                  style={{ width: '100%', maxHeight: 120, objectFit: 'contain' }}
+                                  style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 'var(--radius-md)', objectFit: 'contain' }}
                                 />
                               </div>
                             )}
