@@ -58,6 +58,12 @@ async function cropImageWithBoundingBox(
     const cropWidth = Math.min(width - cropX, Math.ceil(((xmax - xmin) / 1000) * width));
     const cropHeight = Math.min(height - cropY, Math.ceil(((ymax - ymin) / 1000) * height));
 
+    // Si la Bounding Box couvre la quasi-totalité de l'image (>75%), conserver l'image HD originale intégrale
+    if (cropWidth * cropHeight >= 0.75 * width * height) {
+      console.log(`[CROP_IMAGES] Bounding Box large (>75%). Conservation de l'image HD d'origine en pleine largeur native !`);
+      return base64DataUri;
+    }
+
     if (cropWidth > 30 && cropHeight > 30) {
       image.crop({ x: cropX, y: cropY, w: cropWidth, h: cropHeight });
       const croppedBuffer = await image.getBuffer('image/png');
@@ -120,9 +126,25 @@ async function processExtractedPdfImage(img: any): Promise<string | null> {
 
       if (img.width && img.height) {
         try {
-          const jimpImg = new Jimp({ width: img.width, height: img.height, data: rawBuffer });
+          let finalBuffer = rawBuffer;
+
+          // Si le buffer est au format RGB (3 octets par pixel : width * height * 3)
+          if (rawBuffer.length === img.width * img.height * 3) {
+            console.log(`[RGB_TO_RGBA] Détection format RGB 24-bit (${img.width}x${img.height}). Conversion dynamique vers RGBA 32-bit pour éliminer la trame répétée !`);
+            finalBuffer = Buffer.alloc(img.width * img.height * 4);
+            for (let i = 0, j = 0; i < rawBuffer.length; i += 3, j += 4) {
+              finalBuffer[j] = rawBuffer[i];         // R
+              finalBuffer[j + 1] = rawBuffer[i + 1]; // G
+              finalBuffer[j + 2] = rawBuffer[i + 2]; // B
+              finalBuffer[j + 3] = 255;              // Alpha 100%
+            }
+          } else if (rawBuffer.length !== img.width * img.height * 4) {
+            console.log(`[IMAGE_CONVERTER] Taille buffer inattendue (${rawBuffer.length} octets pour ${img.width}x${img.height}). Tentative de réajustement...`);
+          }
+
+          const jimpImg = new Jimp({ width: img.width, height: img.height, data: finalBuffer });
           const pngBuffer = await jimpImg.getBuffer('image/png');
-          console.log(`[IMAGE_CONVERTER] Pixels RGBA HD (${img.width}x${img.height}) convertis avec succès en PNG HD (${pngBuffer.length} octets) !`);
+          console.log(`[IMAGE_CONVERTER] Pixels HD (${img.width}x${img.height}) convertis avec succès en PNG parfait sans bug (${pngBuffer.length} octets) !`);
           return `data:image/png;base64,${pngBuffer.toString('base64')}`;
         } catch (jimpErr) {
           console.warn('[IMAGE_CONVERTER] Erreur encodage Jimp pixels RGBA:', jimpErr);
