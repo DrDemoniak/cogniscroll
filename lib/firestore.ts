@@ -376,6 +376,26 @@ export async function getWeeklyStats(uid: string): Promise<DailyStats[]> {
 // COURS PERSONNALISÉS (Wooflash) — users/{uid}/customCourses/{courseId}
 // ─────────────────────────────────────────────
 
+/** Purge et assainit une question sous forme de Plain Object JavaScript strict pour Firestore */
+function sanitizeQuestion(q: any, i: number = 0): Record<string, any> {
+  const cleanQ: Record<string, any> = {
+    id: String(q.id || `q_${Date.now()}_${i}_${Math.floor(Math.random() * 1000)}`),
+    question: String(q.question || ''),
+    answer: String(q.answer || ''),
+    options: Array.isArray(q.options)
+      ? q.options.map((opt: any) => String(opt || ''))
+      : ['Option A', 'Option B', 'Option C', 'Option D'],
+    correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+    explanation: String(q.explanation || ''),
+  };
+
+  if (q.imageUrl && typeof q.imageUrl === 'string' && q.imageUrl.trim() !== '') {
+    cleanQ.imageUrl = String(q.imageUrl);
+  }
+
+  return cleanQ;
+}
+
 /** Sauvegarde un nouveau cours personnalisé */
 export async function saveCustomCourse(
   uid: string,
@@ -384,14 +404,15 @@ export async function saveCustomCourse(
   console.log('[FIRESTORE] Sauvegarde cours personnalisé:', course.title);
   const ref = collection(db, 'users', uid, 'customCourses');
   
-  // Assainissement de sécurité : suppression de toutes les propriétés `undefined` non supportées par Firestore
-  const cleanData = JSON.parse(JSON.stringify({
-    ...course,
-    uid,
-  }));
+  const cleanQuestions = Array.isArray(course.questions)
+    ? course.questions.map((q, i) => sanitizeQuestion(q, i))
+    : [];
 
   const docRef = await addDoc(ref, {
-    ...cleanData,
+    title: String(course.title || 'Mon Cours'),
+    description: String(course.description || ''),
+    questions: cleanQuestions,
+    uid: String(uid),
     createdAt: serverTimestamp(),
   });
   return docRef.id;
@@ -428,7 +449,12 @@ export async function updateCustomCourse(
   updates: Partial<CustomCourse>
 ): Promise<void> {
   console.log('[FIRESTORE] Mise à jour cours:', courseId, Object.keys(updates));
-  const cleanUpdates = JSON.parse(JSON.stringify(updates));
+  const cleanUpdates: Record<string, any> = {};
+  if (updates.title !== undefined) cleanUpdates.title = String(updates.title);
+  if (updates.description !== undefined) cleanUpdates.description = String(updates.description);
+  if (Array.isArray(updates.questions)) {
+    cleanUpdates.questions = updates.questions.map((q, i) => sanitizeQuestion(q, i));
+  }
   await updateDoc(doc(db, 'users', uid, 'customCourses', courseId), cleanUpdates);
 }
 

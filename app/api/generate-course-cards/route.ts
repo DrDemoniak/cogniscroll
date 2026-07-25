@@ -15,6 +15,26 @@ const model = genAI.getGenerativeModel({
   },
 });
 
+/** Reconstruit un Plain Object JavaScript pur et strict sans aucune propriété undefined ou prototype complexe */
+function sanitizeQuestionForFirestore(q: any, i: number = 0): Record<string, any> {
+  const cleanQ: Record<string, any> = {
+    id: String(q.id || `q_${Date.now()}_${i}_${Math.floor(Math.random() * 1000)}`),
+    question: String(q.question || ''),
+    answer: String(q.answer || ''),
+    options: Array.isArray(q.options)
+      ? q.options.map((opt: any) => String(opt || ''))
+      : ['Option A', 'Option B', 'Option C', 'Option D'],
+    correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+    explanation: String(q.explanation || ''),
+  };
+
+  if (q.imageUrl && typeof q.imageUrl === 'string' && q.imageUrl.trim() !== '') {
+    cleanQ.imageUrl = String(q.imageUrl);
+  }
+
+  return cleanQ;
+}
+
 /** Découpe une zone rectangulaire [ymin, xmin, ymax, xmax] (coordonnées 0-1000) dans une Data URI d'image avec Jimp */
 async function cropImageWithBoundingBox(
   base64DataUri: string,
@@ -289,7 +309,7 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
           svgCount++;
         }
 
-        return {
+        const baseQuestion = {
           id: q.id || `q_${Date.now()}_${i}`,
           question: q.question,
           answer: q.answer || q.options?.[q.correctIndex || 0] || '',
@@ -298,6 +318,8 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
           explanation: q.explanation || '',
           imageUrl: imageUrl,
         };
+
+        return sanitizeQuestionForFirestore(baseQuestion, i);
       })
     );
 
