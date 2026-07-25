@@ -18,13 +18,13 @@ const model = genAI.getGenerativeModel({
   },
 });
 
-/** Extrait les images/schémas (JPEG/PNG) intégrés au PDF sous forme de Data URIs */
+/** Extrait les vrais schémas/images (JPEG/PNG) intégrés au PDF sous forme de Data URIs */
 function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
   const images: string[] = [];
   try {
     let offset = 0;
-    // 1. Extraction des JPEG (Marqueur de début \xFF\xD8\xFF et fin \xFF\xD9)
-    while (offset < buffer.length - 4 && images.length < 5) {
+    // 1. Extraction des JPEG valides (début \xFF\xD8\xFF et présence signature JFIF ou Exif)
+    while (offset < buffer.length - 30 && images.length < 5) {
       if (
         buffer[offset] === 0xff &&
         buffer[offset + 1] === 0xd8 &&
@@ -32,7 +32,7 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
       ) {
         const start = offset;
         let end = -1;
-        for (let i = start + 3; i < Math.min(start + 1500000, buffer.length - 1); i++) {
+        for (let i = start + 3; i < Math.min(start + 2000000, buffer.length - 1); i++) {
           if (buffer[i] === 0xff && buffer[i + 1] === 0xd9) {
             end = i + 2;
             break;
@@ -40,9 +40,13 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
         }
         if (end !== -1) {
           const imgBuffer = buffer.subarray(start, end);
-          // On garde uniquement les schémas/images de taille significative (ex: > 3 Ko)
-          if (imgBuffer.length > 3000) {
+          // Vérification stricte de l'entête magique JPEG (JFIF ou Exif)
+          const headerHex = imgBuffer.subarray(0, 30).toString('hex').toLowerCase();
+          const isValidJpegHeader = headerHex.includes('4a464946') || headerHex.includes('45786966') || headerHex.startsWith('ffd8ffe0') || headerHex.startsWith('ffd8ffe1');
+
+          if (imgBuffer.length > 5000 && isValidJpegHeader) {
             const base64 = imgBuffer.toString('base64');
+            console.log(`[PDF_IMAGES] Image JPEG valide trouvée ! Taille: ${imgBuffer.length} octets`);
             images.push(`data:image/jpeg;base64,${base64}`);
           }
           offset = end;
@@ -52,19 +56,23 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
       offset++;
     }
 
-    // 2. Extraction des PNG (Marqueur \x89PNG) si peu de JPEG
+    // 2. Extraction des PNG valides (\x89PNG\r\n\x1a\n)
     if (images.length < 3) {
       offset = 0;
-      while (offset < buffer.length - 8 && images.length < 5) {
+      while (offset < buffer.length - 16 && images.length < 5) {
         if (
           buffer[offset] === 0x89 &&
           buffer[offset + 1] === 0x50 &&
           buffer[offset + 2] === 0x4e &&
-          buffer[offset + 3] === 0x47
+          buffer[offset + 3] === 0x47 &&
+          buffer[offset + 4] === 0x0d &&
+          buffer[offset + 5] === 0x0a &&
+          buffer[offset + 6] === 0x1a &&
+          buffer[offset + 7] === 0x0a
         ) {
           const start = offset;
           let end = -1;
-          for (let i = start + 8; i < Math.min(start + 1500000, buffer.length - 4); i++) {
+          for (let i = start + 8; i < Math.min(start + 2000000, buffer.length - 4); i++) {
             if (
               buffer[i] === 0x49 &&
               buffer[i + 1] === 0x45 &&
@@ -77,8 +85,9 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
           }
           if (end !== -1) {
             const imgBuffer = buffer.subarray(start, end);
-            if (imgBuffer.length > 3000) {
+            if (imgBuffer.length > 5000) {
               const base64 = imgBuffer.toString('base64');
+              console.log(`[PDF_IMAGES] Image PNG valide trouvée ! Taille: ${imgBuffer.length} octets`);
               images.push(`data:image/png;base64,${base64}`);
             }
             offset = end;
@@ -92,7 +101,7 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
     console.error('[PDF_IMAGES] Erreur lors de l\'extraction d\'images:', err);
   }
 
-  console.log(`[PDF_IMAGES] Total schémas/images extraits du PDF: ${images.length}`);
+  console.log(`[PDF_IMAGES] Total schémas valides extraits: ${images.length}`);
   return images;
 }
 
@@ -228,9 +237,6 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
 
       if (typeof q.imageIndex === 'number' && extractedImages[q.imageIndex]) {
         imageUrl = extractedImages[q.imageIndex];
-      } else if (extractedImages.length > 0 && (i === 0 || i === 1) && extractedImages[i]) {
-        // Associe par défaut les schémas aux premières questions si non spécifié
-        imageUrl = extractedImages[i];
       }
 
       return {

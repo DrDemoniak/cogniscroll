@@ -13,6 +13,8 @@ export default function QuizEngine({ questions, onComplete, theme }: { questions
   const [score, setScore] = useState(0);
   const [finished, setFinished] = useState(false);
 
+  const [hasImgError, setHasImgError] = useState(false);
+
   console.log('[QUIZ_ENGINE] Init quiz. Questions:', questions.length);
 
   const handleSelect = (idx: number) => {
@@ -24,6 +26,7 @@ export default function QuizEngine({ questions, onComplete, theme }: { questions
   };
 
   const handleNext = () => {
+    setHasImgError(false);
     if (currentIdx + 1 < questions.length) {
       setCurrentIdx(c => c + 1);
       setSelectedOpt(null);
@@ -51,12 +54,16 @@ export default function QuizEngine({ questions, onComplete, theme }: { questions
     <div className="quiz-container">
       <div className="progress-bar"><div className="progress-bar-fill" style={{width: `${progress}%`}}></div></div>
       
-      {/* Affichage du schéma s'il est présent */}
-      {q.imageUrl && (
+      {/* Affichage du schéma s'il est présent et valide */}
+      {q.imageUrl && !hasImgError && (
         <div style={{ margin: 'var(--space-4) 0', textAlign: 'center', maxHeight: 260, overflow: 'hidden', borderRadius: 'var(--radius-lg)', background: 'var(--surface-secondary, #f8fafc)', padding: 'var(--space-2)' }}>
           <img
             src={q.imageUrl}
-            alt="Schéma associé à la question"
+            alt=""
+            onError={() => {
+              console.warn('[QUIZ_ENGINE] Image corrompue détectée, masquage propre.');
+              setHasImgError(true);
+            }}
             style={{ maxWidth: '100%', maxHeight: 250, objectFit: 'contain', borderRadius: 'var(--radius-md)' }}
           />
         </div>
