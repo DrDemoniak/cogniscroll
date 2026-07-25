@@ -70,6 +70,61 @@ async function cropImageWithBoundingBox(
   return base64DataUri;
 }
 
+/** Convertit un objet image issu d'unpdf ou du scanner en une VRAIE Data URI PNG/JPEG valide et lisible par la balise <img> */
+async function processExtractedPdfImage(img: any): Promise<string | null> {
+  try {
+    if (!img) return null;
+
+    // Si c'est déjà une chaîne Data URI valide
+    if (typeof img === 'string' && img.startsWith('data:image/')) {
+      const base64Data = img.replace(/^data:image\/\w+;base64,/, '');
+      const rawBuffer = Buffer.from(base64Data, 'base64');
+
+      if (
+        (rawBuffer.length > 2000 && rawBuffer[0] === 0xff && rawBuffer[1] === 0xd8 && rawBuffer[2] === 0xff) ||
+        (rawBuffer.length > 2000 && rawBuffer[0] === 0x89 && rawBuffer[1] === 0x50 && rawBuffer[2] === 0x4e)
+      ) {
+        return img;
+      }
+
+      try {
+        const jimpImage = await Jimp.read(rawBuffer);
+        const pngBuffer = await jimpImage.getBuffer('image/png');
+        console.log(`[IMAGE_CONVERTER] Image convertie et ré-encodée en PNG valide (${pngBuffer.length} octets) !`);
+        return `data:image/png;base64,${pngBuffer.toString('base64')}`;
+      } catch (e) {
+        return img;
+      }
+    }
+
+    // Si c'est un objet unpdf avec width, height et data (RGBA raw pixels)
+    if (img && img.data && (img.width || img.data.byteLength)) {
+      const rawBuffer = Buffer.from(img.data);
+      if (
+        (rawBuffer.length > 2000 && rawBuffer[0] === 0xff && rawBuffer[1] === 0xd8 && rawBuffer[2] === 0xff) ||
+        (rawBuffer.length > 2000 && rawBuffer[0] === 0x89 && rawBuffer[1] === 0x50 && rawBuffer[2] === 0x4e)
+      ) {
+        const mime = rawBuffer[0] === 0xff ? 'image/jpeg' : 'image/png';
+        return `data:${mime};base64,${rawBuffer.toString('base64')}`;
+      }
+
+      if (img.width && img.height) {
+        try {
+          const jimpImg = new Jimp({ width: img.width, height: img.height, data: rawBuffer });
+          const pngBuffer = await jimpImg.getBuffer('image/png');
+          console.log(`[IMAGE_CONVERTER] Pixels RGBA (${img.width}x${img.height}) convertis avec succès en PNG valide (${pngBuffer.length} octets) !`);
+          return `data:image/png;base64,${pngBuffer.toString('base64')}`;
+        } catch (jimpErr) {
+          console.warn('[IMAGE_CONVERTER] Erreur encodage Jimp pixels RGBA:', jimpErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[IMAGE_CONVERTER] Erreur lors du traitement de l\'image:', err);
+  }
+  return null;
+}
+
 /** Extrait les vrais schémas/images (JPEG/PNG) intégrés au PDF sous forme de Data URIs via unpdf & scanner */
 async function extractImagesFromPdfBuffer(buffer: Buffer): Promise<string[]> {
   const images: string[] = [];
@@ -85,10 +140,11 @@ async function extractImagesFromPdfBuffer(buffer: Buffer): Promise<string[]> {
         const pageImages = await extractImages(pdf, pageNum);
         for (const img of pageImages) {
           if (img && img.data && img.data.byteLength > 3000) {
-            const base64 = Buffer.from(img.data).toString('base64');
-            const mime = (img as any).mimeType || (img as any).type || 'image/png';
-            images.push(`data:${mime};base64,${base64}`);
-            console.log(`[UNPDF] Image/Schéma réel extrait de la page ${pageNum} (${img.data.byteLength} octets) !`);
+            const validDataUri = await processExtractedPdfImage(img);
+            if (validDataUri) {
+              images.push(validDataUri);
+              console.log(`[UNPDF] Image/Schéma réel converti et validé pour la page ${pageNum} !`);
+            }
           }
         }
       } catch (pageErr) {

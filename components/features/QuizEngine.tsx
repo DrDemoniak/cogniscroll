@@ -56,15 +56,18 @@ export default function QuizEngine({ questions, onComplete, theme }: { questions
       
       {/* Affichage du schéma s'il est présent et valide */}
       {q.imageUrl && !hasImgError && (
-        <div style={{ margin: 'var(--space-4) 0', textAlign: 'center', maxHeight: 260, overflow: 'hidden', borderRadius: 'var(--radius-lg)', background: 'var(--surface-secondary, #f8fafc)', padding: 'var(--space-2)' }}>
+        <div style={{ margin: 'var(--space-4) 0', textAlign: 'center', maxHeight: 280, overflow: 'hidden', borderRadius: 'var(--radius-lg)', background: 'var(--surface-secondary, #f8fafc)', padding: 'var(--space-2)', border: '1px solid var(--border-color, #e2e8f0)' }}>
           <img
             src={q.imageUrl}
-            alt=""
-            onError={() => {
-              console.warn('[QUIZ_ENGINE] Image corrompue détectée, masquage propre.');
+            alt="Schéma associé à la question"
+            onLoad={() => {
+              console.log(`[QUIZ_ENGINE] Schéma affiché avec succès pour la question ${currentIdx + 1} !`);
+            }}
+            onError={(e) => {
+              console.warn('[QUIZ_ENGINE] Image non lisible par le navigateur:', e);
               setHasImgError(true);
             }}
-            style={{ maxWidth: '100%', maxHeight: 250, objectFit: 'contain', borderRadius: 'var(--radius-md)' }}
+            style={{ maxWidth: '100%', maxHeight: 270, objectFit: 'contain', borderRadius: 'var(--radius-md)' }}
           />
         </div>
       )}
