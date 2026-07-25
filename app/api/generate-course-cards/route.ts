@@ -35,46 +35,6 @@ function sanitizeQuestionForFirestore(q: any, i: number = 0): Record<string, any
   return cleanQ;
 }
 
-/** Découpe une zone rectangulaire [ymin, xmin, ymax, xmax] (coordonnées 0-1000) dans une Data URI d'image avec Jimp */
-async function cropImageWithBoundingBox(
-  base64DataUri: string,
-  box: [number, number, number, number]
-): Promise<string> {
-  try {
-    const [ymin, xmin, ymax, xmax] = box;
-    if (ymin === undefined || xmin === undefined || ymax === undefined || xmax === undefined) {
-      return base64DataUri;
-    }
-
-    const base64Data = base64DataUri.replace(/^data:image\/\w+;base64,/, '');
-    const imageBuffer = Buffer.from(base64Data, 'base64');
-
-    const image = await Jimp.read(imageBuffer);
-    const width = image.bitmap.width;
-    const height = image.bitmap.height;
-
-    const cropX = Math.max(0, Math.floor((xmin / 1000) * width));
-    const cropY = Math.max(0, Math.floor((ymin / 1000) * height));
-    const cropWidth = Math.min(width - cropX, Math.ceil(((xmax - xmin) / 1000) * width));
-    const cropHeight = Math.min(height - cropY, Math.ceil(((ymax - ymin) / 1000) * height));
-
-    // Si la Bounding Box couvre la quasi-totalité de l'image (>75%), conserver l'image HD originale intégrale
-    if (cropWidth * cropHeight >= 0.75 * width * height) {
-      console.log(`[CROP_IMAGES] Bounding Box large (>75%). Conservation de l'image HD d'origine en pleine largeur native !`);
-      return base64DataUri;
-    }
-
-    if (cropWidth > 30 && cropHeight > 30) {
-      image.crop({ x: cropX, y: cropY, w: cropWidth, h: cropHeight });
-      const croppedBuffer = await image.getBuffer('image/png');
-      console.log(`[CROP_IMAGES] Schéma découpé avec succès par Bounding Box Gemini (${cropWidth}x${cropHeight} px) !`);
-      return `data:image/png;base64,${croppedBuffer.toString('base64')}`;
-    }
-  } catch (err) {
-    console.error('[CROP_IMAGES] Erreur lors du découpage par Bounding Box:', err);
-  }
-  return base64DataUri;
-}
 
 /** Convertit un objet image issu d'unpdf ou du scanner en une VRAIE Data URI PNG/JPEG valide et lisible par la balise <img> */
 async function processExtractedPdfImage(img: any): Promise<string | null> {
@@ -337,13 +297,12 @@ export async function POST(request: NextRequest) {
     }
 
     const hasImagesPrompt = extractedImages.length > 0
-      ? `- ${extractedImages.length} schémas/illustrations ont été extraits du document PDF sur ${imagesByPage.size} page(s).
-- RÈGLES DE PRÉCISION STRICTES PAR PAGE :
-  1. Sélectionne PRIORITAIREMENT les vraies figures explicatives, mécanismes biologiques/médicaux ou diagrammes majeurs du cours, particulièrement ceux identifiés par une légende descriptive du type "Figure 1. [Titre]", "Figure 2. [Titre]", "Figure X" ou un titre de schéma.
-  2. REJETTE STRICTEMENT les icônes d'ampoules 💡, puces graphiques "Pour information / Remarque", logos d'université, en-têtes ou éléments d'illustration décoratifs sans valeur pédagogique directe !
-  3. Pour chaque question s'appuyant sur une Figure, indique :
-     - "pageNumber": N (le numéro de page EXACT du PDF de 1 à N où se situe la Figure ou schéma).
-     - "boundingBox": [ymin, xmin, ymax, xmax] (coordonnées normalisées de 0 à 1000 encadrant la Figure ET sa légende descriptive sur la page).`
+      ? `- ${extractedImages.length} schémas/illustrations ont été extraits du document PDF (index de 0 à ${extractedImages.length - 1}). Les images te sont fournies directement dans le prompt.
+- RÈGLES DE SÉLECTION D'IMAGE STRICTES :
+  1. Sélectionne PRIORITAIREMENT les vraies figures explicatives, diagrammes majeurs ou schémas du cours.
+  2. REJETTE STRICTEMENT les icônes d'ampoules 💡, puces graphiques "Pour information / Remarque", logos d'université, en-têtes ou petites illustrations décoratives ! 
+  3. Pour chaque question s'appuyant sur un schéma, indique :
+     - "imageIndex": N (l'index exact de 0 à ${extractedImages.length - 1} de l'image correspondante que tu vois en pièce jointe).`
       : `- AUCUNE image matricielle autonome n'a été extraite (le cours utilise des schémas dessinés en formes/textes vectoriels PowerPoint/Word). Pour au moins 2 questions portant sur les mécanismes ou diagrammes clés du cours, génère le champ \`svgSchema: "<svg viewBox='0 0 500 300' xmlns='http://www.w3.org/2000/svg'>...</svg>"\` représentant un schéma vectoriel SVG schématique, propre, coloré, clair et explicatif résumant la notion.`;
 
     const textContextPrompt = courseText.trim()
@@ -380,8 +339,7 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
       "options": ["C'est...", "Option B", "Option C", "Option D"],
       "correctIndex": 0,
       "explanation": "Explication courte.",
-      "pageNumber": 2,
-      "boundingBox": [100, 50, 600, 950],
+      "imageIndex": 0,
       "svgSchema": "<svg viewBox='0 0 500 300' xmlns='http://www.w3.org/2000/svg'>...</svg>"
     }
   ]
@@ -389,8 +347,26 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
 `;
 
     // Appel à l'API Gemini : si pdfPart est présent, on envoie à la fois le PDF et le prompt (multimodal)
-    const contentsArray = pdfPart ? [pdfPart, prompt] : [prompt];
-    statusLogs.push(`Envoi de la requête à l'API Gemini Vision.`);
+    const contentsArray: any[] = [];
+    if (pdfPart) contentsArray.push(pdfPart);
+    
+    // Ajout des images extraites pour que Gemini puisse les voir directement
+    extractedImages.forEach((dataUri, idx) => {
+      const parts = dataUri.split(',');
+      if (parts.length === 2) {
+        const mime = parts[0].split(':')[1].split(';')[0];
+        const base64 = parts[1];
+        contentsArray.push(`[Image Index ${idx}]`);
+        contentsArray.push({
+          inlineData: {
+            data: base64,
+            mimeType: mime,
+          },
+        });
+      }
+    });
+    contentsArray.push(prompt);
+    statusLogs.push(`Envoi de la requête à l'API Gemini Vision avec ${extractedImages.length} image(s) extraite(s) jointes.`);
 
     const result = await model.generateContent(contentsArray);
     const responseText = result.response.text();
@@ -421,30 +397,10 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
       data.questions.map(async (q: any, i: number) => {
         let imageUrl: string | undefined = undefined;
 
-        // 1. Essai prioritaire par numéro de page précis (pageNumber)
-        if (typeof q.pageNumber === 'number' && imagesByPage.has(q.pageNumber)) {
-          const pageImagesList = imagesByPage.get(q.pageNumber)!;
-          if (pageImagesList.length > 0) {
-            const rawUri = pageImagesList[0];
-            if (Array.isArray(q.boundingBox) && q.boundingBox.length === 4) {
-              imageUrl = await cropImageWithBoundingBox(rawUri, q.boundingBox as [number, number, number, number]);
-              if (imageUrl !== rawUri) croppedCount++;
-            } else {
-              imageUrl = rawUri;
-            }
-            console.log(`[PAGE_MATCH] Question ${i + 1} : Image associée avec certitude à la page ${q.pageNumber} !`);
-          }
-        }
-
-        // 2. Fallback par index global si pageNumber non trouvé
-        if (!imageUrl && typeof q.imageIndex === 'number' && extractedImages[q.imageIndex]) {
-          const rawUri = extractedImages[q.imageIndex];
-          if (Array.isArray(q.boundingBox) && q.boundingBox.length === 4) {
-            imageUrl = await cropImageWithBoundingBox(rawUri, q.boundingBox as [number, number, number, number]);
-            if (imageUrl !== rawUri) croppedCount++;
-          } else {
-            imageUrl = rawUri;
-          }
+        // 1. Association directe par imageIndex (Gemini a vu les images et a choisi l'index)
+        if (typeof q.imageIndex === 'number' && extractedImages[q.imageIndex]) {
+          imageUrl = extractedImages[q.imageIndex];
+          console.log(`[IMAGE_MATCH] Question ${i + 1} : Image ${q.imageIndex} associée directement sans rognage !`);
         } else if (!imageUrl && q.svgSchema && typeof q.svgSchema === 'string' && q.svgSchema.includes('<svg')) {
           const cleanSvg = q.svgSchema.trim().replace(/^```xml/, '').replace(/^```html/, '').replace(/^```svg/, '').replace(/```$/, '');
           imageUrl = `data:image/svg+xml;utf8,${encodeURIComponent(cleanSvg)}`;
