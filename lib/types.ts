@@ -154,3 +154,25 @@ export interface DailyStats {
   lessonsCompleted: number;
   xpEarned: number;
 }
+
+// ─────────────────────────────────────────────
+// Cours Personnalisés (Wooflash) — users/{uid}/customCourses/{courseId}
+// ─────────────────────────────────────────────
+
+export interface CourseQuestion {
+  id: string;
+  question: string;
+  answer: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+}
+
+export interface CustomCourse {
+  id: string;
+  uid: string;
+  title: string;
+  description?: string;
+  createdAt: any;
+  questions: CourseQuestion[];
+}

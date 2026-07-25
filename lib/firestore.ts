@@ -28,6 +28,8 @@ import type {
   QuizResult,
   ReviewCard,
   DailyStats,
+  CustomCourse,
+  CourseQuestion,
 } from './types';
 import { getLevelForXP, computeStreak, getTodayString } from './gamification';
 
@@ -368,4 +370,66 @@ export async function getWeeklyStats(uid: string): Promise<DailyStats[]> {
   }
 
   return stats;
+}
+
+// ─────────────────────────────────────────────
+// COURS PERSONNALISÉS (Wooflash) — users/{uid}/customCourses/{courseId}
+// ─────────────────────────────────────────────
+
+/** Sauvegarde un nouveau cours personnalisé */
+export async function saveCustomCourse(
+  uid: string,
+  course: Omit<CustomCourse, 'id' | 'uid'>
+): Promise<string> {
+  console.log('[FIRESTORE] Sauvegarde cours personnalisé:', course.title);
+  const ref = collection(db, 'users', uid, 'customCourses');
+  const docRef = await addDoc(ref, {
+    ...course,
+    uid,
+    createdAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+/** Récupère tous les cours personnalisés d'un utilisateur */
+export async function getCustomCourses(uid: string): Promise<CustomCourse[]> {
+  console.log('[FIRESTORE] Lecture cours personnalisés pour:', uid);
+  const q = query(collection(db, 'users', uid, 'customCourses'));
+  const snap = await getDocs(q);
+  const courses = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CustomCourse);
+  return courses.sort((a, b) => {
+    const aDate = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+    const bDate = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+    return bDate.getTime() - aDate.getTime();
+  });
+}
+
+/** Récupère un cours personnalisé par son ID */
+export async function getCustomCourseById(
+  uid: string,
+  courseId: string
+): Promise<CustomCourse | null> {
+  console.log('[FIRESTORE] Lecture cours:', courseId);
+  const snap = await getDoc(doc(db, 'users', uid, 'customCourses', courseId));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as CustomCourse;
+}
+
+/** Met à jour un cours personnalisé (titre, description, ou questions) */
+export async function updateCustomCourse(
+  uid: string,
+  courseId: string,
+  updates: Partial<CustomCourse>
+): Promise<void> {
+  console.log('[FIRESTORE] Mise à jour cours:', courseId, Object.keys(updates));
+  await updateDoc(doc(db, 'users', uid, 'customCourses', courseId), updates as any);
+}
+
+/** Supprime un cours personnalisé */
+export async function deleteCustomCourse(
+  uid: string,
+  courseId: string
+): Promise<void> {
+  console.log('[FIRESTORE] Suppression cours:', courseId);
+  await deleteDoc(doc(db, 'users', uid, 'customCourses', courseId));
 }

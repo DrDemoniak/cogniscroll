@@ -145,6 +145,22 @@ export default function ReviewsPage() {
                   </button>
                 </div>
 
+                {/* Option 3 : Révise tes cours (Wooflash) */}
+                <div
+                  className="card card-glass card-clickable"
+                  style={{ padding: 'var(--space-8)', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', border: '1.5px solid var(--primary)' }}
+                  onClick={() => router.push('/reviews/courses')}
+                >
+                  <div style={{ fontSize: '3.5rem', marginBottom: 'var(--space-4)' }}>📚</div>
+                  <h2 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: 'var(--space-2)' }}>Révise tes cours</h2>
+                  <p className="text-muted" style={{ lineHeight: 1.6, marginBottom: 'var(--space-6)', flex: 1 }}>
+                    Importe ton **cours en PDF** et laisse l'IA créer tes Quiz et Flash Cards personnalisés.
+                  </p>
+                  <button className="btn btn-primary btn-lg" style={{ width: '100%' }}>
+                    📁 Importer un PDF (Wooflash)
+                  </button>
+                </div>
+
               </div>
             </div>
           ) : (
