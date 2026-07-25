@@ -55,6 +55,11 @@ export default function CustomCoursesPage() {
   const [qCorrectIndex, setQCorrectIndex] = useState(0);
   const [qExplanation, setQExplanation] = useState('');
 
+  // Génération de N questions supplémentaires par l'IA
+  const [isGenerateMoreModal, setIsGenerateMoreModal] = useState(false);
+  const [requestedCount, setRequestedCount] = useState(5);
+  const [isGeneratingMore, setIsGeneratingMore] = useState(false);
+
   // Mode Révision en cours
   const [activeSession, setActiveSession] = useState<{
     course: CustomCourse;
@@ -254,6 +259,50 @@ export default function CustomCoursesPage() {
     }
   };
 
+  // ── Génération IA de N questions supplémentaires (Max 20) ───────────────
+  const handleGenerateMoreQuestions = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !editingCourse) return;
+
+    setIsGeneratingMore(true);
+    console.log('[COURSES] Génération de', requestedCount, 'questions pour:', editingCourse.title);
+
+    try {
+      const res = await fetch('/api/generate-more-course-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          courseTitle: editingCourse.title,
+          existingQuestions: editingCourse.questions,
+          requestedCount: requestedCount,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Erreur de génération');
+      }
+
+      const data = await res.json();
+      if (data.questions && Array.isArray(data.questions)) {
+        const updatedQuestions = [...editingCourse.questions, ...data.questions];
+        await updateCustomCourse(user.uid, editingCourse.id, { questions: updatedQuestions });
+
+        const updatedCourse = { ...editingCourse, questions: updatedQuestions };
+        setEditingCourse(updatedCourse);
+        setCourses(list => list.map(c => (c.id === editingCourse.id ? updatedCourse : c)));
+
+        setIsGenerateMoreModal(false);
+        addToast(`🤖 ${data.questions.length} nouvelles questions ajoutées avec succès !`, 'success');
+      }
+    } catch (err: any) {
+      console.error('[COURSES] Erreur génération questions supplémentaires:', err);
+      addToast(err.message || 'Impossible de générer des questions', 'error');
+    } finally {
+      setIsGeneratingMore(false);
+    }
+  };
+
   // ── Lancer la Révision d'un cours ─────────────────────────────────────
   const handleStartSession = (course: CustomCourse, mode: 'quiz' | 'flashcards') => {
     if (course.questions.length === 0) {
@@ -449,11 +498,14 @@ export default function CustomCoursesPage() {
                       <h2 style={{ fontSize: '1.5rem', margin: 0 }}>⚙️ Gestion du cours : {editingCourse.title}</h2>
                       <p className="text-muted" style={{ margin: 0 }}>{editingCourse.questions.length} cartes créées</p>
                     </div>
-                    <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                      <button className="btn btn-primary btn-sm" onClick={() => openQuestionModal()}>
-                        ➕ Ajouter une question
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                      <button className="btn btn-primary btn-sm" onClick={() => setIsGenerateMoreModal(true)}>
+                        🤖 Générer par l'IA
                       </button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => setEditingCourse(null)}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => openQuestionModal()}>
+                        ➕ Manuellement
+                      </button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setEditingCourse(null)}>
                         Fermer l'éditeur
                       </button>
                     </div>
@@ -565,6 +617,63 @@ export default function CustomCoursesPage() {
                         </button>
                         <button type="submit" className="btn btn-primary">
                           Sauvegarder
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Génération de Questions Supplémentaires par l'IA */}
+              {isGenerateMoreModal && editingCourse && (
+                <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 'var(--space-4)' }}>
+                  <div className="card card-elevated" style={{ maxWidth: 440, width: '100%', padding: 'var(--space-6)' }}>
+                    <h3 style={{ marginBottom: 'var(--space-3)' }}>
+                      🤖 Générer de nouvelles questions
+                    </h3>
+                    <p className="text-sm text-muted" style={{ marginBottom: 'var(--space-4)', lineHeight: 1.5 }}>
+                      L'IA va analyser le cours <strong>"{editingCourse.title}"</strong> et générer des cartes inédites sans répéter celles déjà existantes.
+                    </p>
+                    <form onSubmit={handleGenerateMoreQuestions} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                      <div>
+                        <label className="form-label">Nombre de questions supplémentaires (1 à 20 max)</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                          <input
+                            type="range"
+                            min={1}
+                            max={20}
+                            value={requestedCount}
+                            onChange={e => setRequestedCount(Number(e.target.value))}
+                            style={{ flex: 1 }}
+                          />
+                          <span className="badge badge-primary" style={{ minWidth: 48, justifyContent: 'center', fontSize: '1rem', fontWeight: 700 }}>
+                            {requestedCount}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)', flexWrap: 'wrap' }}>
+                          {[3, 5, 10, 15, 20].map(num => (
+                            <button
+                              key={num}
+                              type="button"
+                              className={`btn btn-sm ${requestedCount === num ? 'btn-primary' : 'btn-ghost'}`}
+                              onClick={() => setRequestedCount(num)}
+                            >
+                              {num}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'flex-end', marginTop: 'var(--space-4)' }}>
+                        <button type="button" className="btn btn-secondary" onClick={() => setIsGenerateMoreModal(false)} disabled={isGeneratingMore}>
+                          Annuler
+                        </button>
+                        <button type="submit" className="btn btn-primary" disabled={isGeneratingMore}>
+                          {isGeneratingMore ? (
+                            <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Génération...</>
+                          ) : (
+                            `🚀 Générer ${requestedCount} questions`
+                          )}
                         </button>
                       </div>
                     </form>
