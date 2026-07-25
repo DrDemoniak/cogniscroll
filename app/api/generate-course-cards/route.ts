@@ -51,7 +51,7 @@ async function cropImageWithBoundingBox(
 }
 
 /** Extrait les vrais schémas/images (JPEG/PNG) intégrés au PDF sous forme de Data URIs via unpdf & scanner */
-async function extractImagesFromPdfBuffer(buffer: Buffer): string[] | Promise<string[]> {
+async function extractImagesFromPdfBuffer(buffer: Buffer): Promise<string[]> {
   const images: string[] = [];
 
   // 1. Détection via unpdf (100% JS pure)
