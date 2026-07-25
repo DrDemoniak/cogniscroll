@@ -66,7 +66,7 @@ async function extractImagesFromPdfBuffer(buffer: Buffer): Promise<string[]> {
         for (const img of pageImages) {
           if (img && img.data && img.data.byteLength > 3000) {
             const base64 = Buffer.from(img.data).toString('base64');
-            const mime = img.mimeType || 'image/png';
+            const mime = (img as any).mimeType || (img as any).type || 'image/png';
             images.push(`data:${mime};base64,${base64}`);
             console.log(`[UNPDF] Image/Schéma réel extrait de la page ${pageNum} (${img.data.byteLength} octets) !`);
           }
