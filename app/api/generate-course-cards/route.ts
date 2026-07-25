@@ -316,12 +316,44 @@ export async function POST(request: NextRequest) {
   1. Sélectionne PRIORITAIREMENT les vraies figures explicatives, diagrammes majeurs ou schémas du cours.
   2. REJETTE STRICTEMENT les icônes d'ampoules 💡, puces graphiques "Pour information / Remarque", logos d'université, en-têtes ou petites illustrations décoratives ! 
   3. Pour chaque question s'appuyant sur un schéma, indique :
-     - "imageIndex": N (l'index exact de 0 à ${extractedImages.length - 1} de l'image correspondante que tu vois en pièce jointe).`
+     - "imageIndex": N (l'index exact de 0 à ${extractedImages.length - 1} de l'image correspondante que tu vois en pièce jointe).
+  4. NE GÉNÈRE AUCUN SVG MANUELLEMENT SI DES IMAGES SONT DISPONIBLES.`
       : `- AUCUNE image matricielle autonome n'a été extraite (le cours utilise des schémas dessinés en formes/textes vectoriels PowerPoint/Word). Pour au moins 2 questions portant sur les mécanismes ou diagrammes clés du cours, génère le champ \`svgSchema: "<svg viewBox='0 0 500 300' xmlns='http://www.w3.org/2000/svg'>...</svg>"\` représentant un schéma vectoriel SVG schématique, propre, coloré, clair et explicatif résumant la notion.`;
 
     const textContextPrompt = courseText.trim()
       ? `Extrait de texte du cours :\n${courseText.slice(0, 15000)}\n`
       : 'Note : Ce document PDF peut contenir du texte scanné ou des schémas visuels. Utilise tes capacités de vision multimodale et OCR pour lire l\'intégralité du document joint.';
+
+    const jsonStructure = extractedImages.length > 0
+      ? `{
+  "title": "${courseTitle}",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Quelle est la définition de...",
+      "answer": "C'est...",
+      "options": ["C'est...", "Option B", "Option C", "Option D"],
+      "correctIndex": 0,
+      "explanation": "Explication courte.",
+      "imageIndex": 0
+    }
+  ]
+}`
+      : `{
+  "title": "${courseTitle}",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Quelle est la définition de...",
+      "answer": "C'est...",
+      "options": ["C'est...", "Option B", "Option C", "Option D"],
+      "correctIndex": 0,
+      "explanation": "Explication courte.",
+      "imageIndex": null,
+      "svgSchema": "<svg viewBox='0 0 500 300' xmlns='http://www.w3.org/2000/svg'>...</svg>"
+    }
+  ]
+}`;
 
     const prompt = `
 Tu es un professeur et créateur de contenu pédagogique expert.
@@ -343,21 +375,7 @@ ${hasImagesPrompt}
 - En FRANÇAIS uniquement.
 
 Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette structure :
-{
-  "title": "${courseTitle}",
-  "questions": [
-    {
-      "id": "q1",
-      "question": "Quelle est la définition de...",
-      "answer": "C'est...",
-      "options": ["C'est...", "Option B", "Option C", "Option D"],
-      "correctIndex": 0,
-      "explanation": "Explication courte.",
-      "imageIndex": 0,
-      "svgSchema": "<svg viewBox='0 0 500 300' xmlns='http://www.w3.org/2000/svg'>...</svg>"
-    }
-  ]
-}
+${jsonStructure}
 `;
 
     // Appel à l'API Gemini : si pdfPart est présent, on envoie à la fois le PDF et le prompt (multimodal)
