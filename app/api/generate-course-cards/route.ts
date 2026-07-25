@@ -23,8 +23,8 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
   const images: string[] = [];
   try {
     let offset = 0;
-    // 1. Extraction des JPEG valides (début \xFF\xD8\xFF et présence signature JFIF ou Exif)
-    while (offset < buffer.length - 30 && images.length < 5) {
+    // 1. Extraction des JPEG valides (début \xFF\xD8\xFF et fin \xFF\xD9)
+    while (offset < buffer.length - 30 && images.length < 6) {
       if (
         buffer[offset] === 0xff &&
         buffer[offset + 1] === 0xd8 &&
@@ -32,7 +32,7 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
       ) {
         const start = offset;
         let end = -1;
-        for (let i = start + 3; i < Math.min(start + 2000000, buffer.length - 1); i++) {
+        for (let i = start + 3; i < Math.min(start + 3000000, buffer.length - 1); i++) {
           if (buffer[i] === 0xff && buffer[i + 1] === 0xd9) {
             end = i + 2;
             break;
@@ -40,13 +40,20 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
         }
         if (end !== -1) {
           const imgBuffer = buffer.subarray(start, end);
-          // Vérification stricte de l'entête magique JPEG (JFIF ou Exif)
-          const headerHex = imgBuffer.subarray(0, 30).toString('hex').toLowerCase();
-          const isValidJpegHeader = headerHex.includes('4a464946') || headerHex.includes('45786966') || headerHex.startsWith('ffd8ffe0') || headerHex.startsWith('ffd8ffe1');
+          const headerHex = imgBuffer.subarray(0, 40).toString('hex').toLowerCase();
+          // Vérification que le sous-buffer est un JPEG valide (JFIF, EXIF, ou stream DCTDecode standard)
+          const isValidJpegHeader =
+            headerHex.includes('4a464946') ||
+            headerHex.includes('45786966') ||
+            headerHex.startsWith('ffd8ffe0') ||
+            headerHex.startsWith('ffd8ffe1') ||
+            headerHex.startsWith('ffd8ffed') ||
+            headerHex.startsWith('ffd8ffee') ||
+            headerHex.startsWith('ffd8ffdb');
 
-          if (imgBuffer.length > 5000 && isValidJpegHeader) {
+          if (imgBuffer.length > 4000 && isValidJpegHeader) {
             const base64 = imgBuffer.toString('base64');
-            console.log(`[PDF_IMAGES] Image JPEG valide trouvée ! Taille: ${imgBuffer.length} octets`);
+            console.log(`[PDF_IMAGES] Image/Schéma JPEG valide extrait (${imgBuffer.length} octets)`);
             images.push(`data:image/jpeg;base64,${base64}`);
           }
           offset = end;
@@ -59,7 +66,7 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
     // 2. Extraction des PNG valides (\x89PNG\r\n\x1a\n)
     if (images.length < 3) {
       offset = 0;
-      while (offset < buffer.length - 16 && images.length < 5) {
+      while (offset < buffer.length - 16 && images.length < 6) {
         if (
           buffer[offset] === 0x89 &&
           buffer[offset + 1] === 0x50 &&
@@ -72,7 +79,7 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
         ) {
           const start = offset;
           let end = -1;
-          for (let i = start + 8; i < Math.min(start + 2000000, buffer.length - 4); i++) {
+          for (let i = start + 8; i < Math.min(start + 3000000, buffer.length - 4); i++) {
             if (
               buffer[i] === 0x49 &&
               buffer[i + 1] === 0x45 &&
@@ -85,9 +92,9 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
           }
           if (end !== -1) {
             const imgBuffer = buffer.subarray(start, end);
-            if (imgBuffer.length > 5000) {
+            if (imgBuffer.length > 4000) {
               const base64 = imgBuffer.toString('base64');
-              console.log(`[PDF_IMAGES] Image PNG valide trouvée ! Taille: ${imgBuffer.length} octets`);
+              console.log(`[PDF_IMAGES] Image/Schéma PNG valide extrait (${imgBuffer.length} octets)`);
               images.push(`data:image/png;base64,${base64}`);
             }
             offset = end;
@@ -106,12 +113,13 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
 }
 
 export async function POST(request: NextRequest) {
-  console.log('[COURSE_CARDS_API] Demande de génération de cartes de cours');
+  console.log('[COURSE_CARDS_API] Demande de génération de cartes de cours (Multimodal PDF)');
 
   try {
     let courseText = '';
     let courseTitle = 'Mon Cours';
     let extractedImages: string[] = [];
+    let pdfPart: any = null;
 
     const contentType = request.headers.get('content-type') || '';
 
@@ -131,25 +139,30 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Format par défaut de nom si non fourni
       if (!titleInput && file.name) {
         courseTitle = file.name.replace(/\.pdf$/i, '');
       }
 
       const buffer = Buffer.from(await file.arrayBuffer());
-      console.log('[COURSE_CARDS_API] Extrait du PDF:', file.name, 'Taille:', buffer.length, 'octets');
+      console.log('[COURSE_CARDS_API] Fichier PDF reçu:', file.name, 'Taille:', buffer.length, 'octets');
 
-      // Extraction des schémas/images
+      // 1. Envoi multimodal direct du PDF à Gemini en InlineData (supporte PDF scannés et complexes)
+      pdfPart = {
+        inlineData: {
+          data: buffer.toString('base64'),
+          mimeType: 'application/pdf',
+        },
+      };
+
+      // 2. Extraction des schémas/images intégrés au PDF
       extractedImages = extractImagesFromPdfBuffer(buffer);
 
-      const parsed = await pdfParse(buffer);
-      courseText = parsed.text || '';
-
-      if (!courseText.trim()) {
-        return NextResponse.json(
-          { error: 'Impossible d\'extraire du texte de ce fichier PDF' },
-          { status: 400 }
-        );
+      // 3. Extraction optionnelle de texte brut via pdf-parse
+      try {
+        const parsed = await pdfParse(buffer);
+        courseText = parsed.text || '';
+      } catch (e) {
+        console.warn('[COURSE_CARDS_API] pdf-parse n\'a pas pu lire le texte brut, passage en mode 100% multimodal OCR.');
       }
     } else {
       const body = await request.json();
@@ -157,33 +170,24 @@ export async function POST(request: NextRequest) {
       courseTitle = body.title || 'Mon Cours';
     }
 
-    if (!courseText.trim()) {
-      return NextResponse.json(
-        { error: 'Le contenu du cours est vide' },
-        { status: 400 }
-      );
-    }
-
-    // Tronque si le document est extrêmement long
-    const truncatedText = courseText.slice(0, 15000);
-
-    console.log('[COURSE_CARDS_API] Analyse du texte de cours (longueur:', truncatedText.length, 'caractères)');
-
     const hasImagesPrompt = extractedImages.length > 0
-      ? `- ${extractedImages.length} schémas/illustrations ont été extraits du document PDF (index de 0 à ${extractedImages.length - 1}). Si une question concerne la lecture, le repérage ou l'analyse d'un schéma du cours, inclut le champ \`imageIndex: N\` (ex: \`imageIndex: 0\`).`
+      ? `- ${extractedImages.length} schémas/illustrations ont été extraits du document PDF (index de 0 à ${extractedImages.length - 1}). Si une question concerne directement la lecture, le repérage ou l'analyse d'un schéma du cours, inclut le champ \`imageIndex: N\` (ex: \`imageIndex: 0\`).`
       : '';
+
+    const textContextPrompt = courseText.trim()
+      ? `Extrait de texte du cours :\n${courseText.slice(0, 15000)}\n`
+      : 'Note : Ce document PDF peut contenir du texte scanné ou des schémas visuels. Utilise tes capacités de vision multimodale et OCR pour lire l\'intégralité du document joint.';
 
     const prompt = `
 Tu es un professeur et créateur de contenu pédagogique expert.
-Analyse le cours suivant et génère un jeu complet de cartes de révision. Chaque carte servira à la fois de Flash Card (Question / Réponse courte) ET de question de Quiz (QCM 4 options).
+Analyse le document de cours ci-joint et génère un jeu complet de cartes de révision. Chaque carte servira à la fois de Flash Card (Question / Réponse courte) ET de question de Quiz (QCM 4 options).
 
 Titre du cours : ${courseTitle}
 
-Extrait du cours :
-${truncatedText}
+${textContextPrompt}
 
 Règles OBLIGATOIRES :
-- Génère entre 6 et 10 questions pertinentes couvrant l'ensemble des notions importantes de ce cours.
+- Génère entre 6 et 10 questions pertinentes couvrant l'ensemble des notions et schémas importants de ce cours.
 ${hasImagesPrompt}
 - Pour chaque question :
   - "question" : Question claire et précise.
@@ -210,7 +214,11 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
 }
 `;
 
-    const result = await model.generateContent(prompt);
+    // Appel à l'API Gemini : si pdfPart est présent, on envoie à la fois le PDF et le prompt (multimodal)
+    const contentsArray = pdfPart ? [pdfPart, prompt] : [prompt];
+    console.log('[COURSE_CARDS_API] Envoi de la requête à Gemini (Multimodal:', !!pdfPart, ')');
+
+    const result = await model.generateContent(contentsArray);
     const responseText = result.response.text();
 
     let data;
@@ -260,7 +268,7 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
   } catch (err: any) {
     console.error('[COURSE_CARDS_API] Erreur serveur:', err?.message);
     return NextResponse.json(
-      { error: 'Erreur lors du traitement du document ou de la génération' },
+      { error: 'Erreur lors du traitement du document PDF' },
       { status: 500 }
     );
   }
