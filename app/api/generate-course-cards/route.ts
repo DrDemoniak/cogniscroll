@@ -99,16 +99,20 @@ async function processExtractedPdfImage(img: any): Promise<string | null> {
 
     // Si c'est un objet unpdf avec width, height et data (RGBA raw pixels)
     if (img && img.data && (img.width || img.data.byteLength)) {
-      // Filtrage des puces/icônes parasites (taille inférieure à 120x120px)
-      if (img.width && img.height && (img.width < 120 || img.height < 120)) {
-        console.log(`[IMAGE_CONVERTER] Image trop petite ignorée (${img.width}x${img.height} px) — élimination des icônes/logos parasites.`);
+      // Filtrage strict HD Anti-Ampoule/Anti-Logo : élimination de toute image < 350x250 px ou < 25 KB
+      if (img.width && img.height && (img.width < 350 || img.height < 250)) {
+        console.log(`[HD_FILTER] Image parasite trop petite ignorée (${img.width}x${img.height} px) — élimination des ampoules/logos.`);
+        return null;
+      }
+      if (img.data.byteLength && img.data.byteLength < 25000) {
+        console.log(`[HD_FILTER] Poids d'image trop faible ignoré (${img.data.byteLength} octets) — élimination des ampoules/icônes.`);
         return null;
       }
 
       const rawBuffer = Buffer.from(img.data);
       if (
-        (rawBuffer.length > 2000 && rawBuffer[0] === 0xff && rawBuffer[1] === 0xd8 && rawBuffer[2] === 0xff) ||
-        (rawBuffer.length > 2000 && rawBuffer[0] === 0x89 && rawBuffer[1] === 0x50 && rawBuffer[2] === 0x4e)
+        (rawBuffer.length > 25000 && rawBuffer[0] === 0xff && rawBuffer[1] === 0xd8 && rawBuffer[2] === 0xff) ||
+        (rawBuffer.length > 25000 && rawBuffer[0] === 0x89 && rawBuffer[1] === 0x50 && rawBuffer[2] === 0x4e)
       ) {
         const mime = rawBuffer[0] === 0xff ? 'image/jpeg' : 'image/png';
         return `data:${mime};base64,${rawBuffer.toString('base64')}`;
@@ -135,7 +139,7 @@ async function processExtractedPdfImage(img: any): Promise<string | null> {
 async function extractImagesFromPdfBuffer(buffer: Buffer): Promise<string[]> {
   const images: string[] = [];
 
-  // 1. Détection via unpdf (100% JS pure)
+  // 1. Détection via unpdf (100% JS pure) avec filtre HD (> 25 KB)
   try {
     const pdfData = new Uint8Array(buffer);
     const pdf = await getDocumentProxy(pdfData);
@@ -145,11 +149,11 @@ async function extractImagesFromPdfBuffer(buffer: Buffer): Promise<string[]> {
       try {
         const pageImages = await extractImages(pdf, pageNum);
         for (const img of pageImages) {
-          if (img && img.data && img.data.byteLength > 3000) {
+          if (img && img.data && img.data.byteLength > 25000) {
             const validDataUri = await processExtractedPdfImage(img);
             if (validDataUri) {
               images.push(validDataUri);
-              console.log(`[UNPDF] Image/Schéma réel converti et validé pour la page ${pageNum} !`);
+              console.log(`[UNPDF] Image/Schéma HD réel conservé pour la page ${pageNum} !`);
             }
           }
         }
@@ -191,7 +195,7 @@ async function extractImagesFromPdfBuffer(buffer: Buffer): Promise<string[]> {
               headerHex.startsWith('ffd8ffee') ||
               headerHex.startsWith('ffd8ffdb');
 
-            if (imgBuffer.length > 4000 && isValidJpegHeader) {
+            if (imgBuffer.length > 25000 && isValidJpegHeader) {
               const base64 = imgBuffer.toString('base64');
               images.push(`data:image/jpeg;base64,${base64}`);
             }

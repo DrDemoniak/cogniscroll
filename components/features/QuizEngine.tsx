@@ -54,9 +54,9 @@ export default function QuizEngine({ questions, onComplete, theme }: { questions
     <div className="quiz-container">
       <div className="progress-bar"><div className="progress-bar-fill" style={{width: `${progress}%`}}></div></div>
       
-      {/* Affichage du schéma en pleine largeur (Full-Width sans aucune coupure) */}
+      {/* Affichage du schéma en pleine largeur (Full-Width Total sans aucune coupure) */}
       {q.imageUrl && !hasImgError && (
-        <div style={{ width: '100%', margin: 'var(--space-4) 0', textAlign: 'center', borderRadius: 'var(--radius-lg)', background: 'var(--surface-secondary, #f8fafc)', padding: 'var(--space-3)', border: '1px solid var(--border-color, #e2e8f0)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+        <div style={{ width: '100%', margin: 'var(--space-4) 0', textAlign: 'center', borderRadius: 'var(--radius-lg)', background: 'var(--surface-secondary, #f8fafc)', padding: 'var(--space-3)', border: '1px solid var(--border-color, #e2e8f0)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'visible' }}>
           <img
             src={q.imageUrl}
             alt="Schéma associé à la question"
@@ -67,7 +67,7 @@ export default function QuizEngine({ questions, onComplete, theme }: { questions
               console.warn('[QUIZ_ENGINE] Image non lisible par le navigateur:', e);
               setHasImgError(true);
             }}
-            style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 'var(--radius-md)', objectFit: 'contain' }}
+            style={{ width: '100%', height: 'auto', maxHeight: 'none', display: 'block', borderRadius: 'var(--radius-md)', objectFit: 'contain' }}
           />
         </div>
       )}
