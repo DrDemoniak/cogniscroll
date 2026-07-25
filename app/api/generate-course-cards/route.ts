@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Jimp } from 'jimp';
+import { getDocumentProxy, extractImages } from 'unpdf';
 // @ts-ignore
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 
@@ -49,83 +50,68 @@ async function cropImageWithBoundingBox(
   return base64DataUri;
 }
 
-/** Extrait les vrais schémas/images (JPEG/PNG) intégrés au PDF sous forme de Data URIs */
-function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
+/** Extrait les vrais schémas/images (JPEG/PNG) intégrés au PDF sous forme de Data URIs via unpdf & scanner */
+async function extractImagesFromPdfBuffer(buffer: Buffer): string[] | Promise<string[]> {
   const images: string[] = [];
+
+  // 1. Détection via unpdf (100% JS pure)
   try {
-    let offset = 0;
-    // 1. Extraction des JPEG valides (début \xFF\xD8\xFF et fin \xFF\xD9)
-    while (offset < buffer.length - 30 && images.length < 6) {
-      if (
-        buffer[offset] === 0xff &&
-        buffer[offset + 1] === 0xd8 &&
-        buffer[offset + 2] === 0xff
-      ) {
-        const start = offset;
-        let end = -1;
-        for (let i = start + 3; i < Math.min(start + 3000000, buffer.length - 1); i++) {
-          if (buffer[i] === 0xff && buffer[i + 1] === 0xd9) {
-            end = i + 2;
-            break;
-          }
-        }
-        if (end !== -1) {
-          const imgBuffer = buffer.subarray(start, end);
-          const headerHex = imgBuffer.subarray(0, 40).toString('hex').toLowerCase();
-          const isValidJpegHeader =
-            headerHex.includes('4a464946') ||
-            headerHex.includes('45786966') ||
-            headerHex.startsWith('ffd8ffe0') ||
-            headerHex.startsWith('ffd8ffe1') ||
-            headerHex.startsWith('ffd8ffed') ||
-            headerHex.startsWith('ffd8ffee') ||
-            headerHex.startsWith('ffd8ffdb');
+    const pdfData = new Uint8Array(buffer);
+    const pdf = await getDocumentProxy(pdfData);
+    const totalPages = Math.min(10, pdf.numPages);
 
-          if (imgBuffer.length > 4000 && isValidJpegHeader) {
-            const base64 = imgBuffer.toString('base64');
-            console.log(`[PDF_IMAGES] Image/Schéma JPEG valide extrait (${imgBuffer.length} octets)`);
-            images.push(`data:image/jpeg;base64,${base64}`);
+    for (let pageNum = 1; pageNum <= totalPages && images.length < 8; pageNum++) {
+      try {
+        const pageImages = await extractImages(pdf, pageNum);
+        for (const img of pageImages) {
+          if (img && img.data && img.data.byteLength > 3000) {
+            const base64 = Buffer.from(img.data).toString('base64');
+            const mime = img.mimeType || 'image/png';
+            images.push(`data:${mime};base64,${base64}`);
+            console.log(`[UNPDF] Image/Schéma réel extrait de la page ${pageNum} (${img.data.byteLength} octets) !`);
           }
-          offset = end;
-          continue;
         }
+      } catch (pageErr) {
+        // ignorer les pages sans images
       }
-      offset++;
     }
+  } catch (err) {
+    console.error('[UNPDF] Erreur extraction unpdf:', err);
+  }
 
-    // 2. Extraction des PNG valides (\x89PNG\r\n\x1a\n)
-    if (images.length < 3) {
-      offset = 0;
-      while (offset < buffer.length - 16 && images.length < 6) {
+  // 2. Si unpdf n'a pas trouvé d'images, fallback sur le scanner binaire direct
+  if (images.length === 0) {
+    try {
+      let offset = 0;
+      while (offset < buffer.length - 30 && images.length < 6) {
         if (
-          buffer[offset] === 0x89 &&
-          buffer[offset + 1] === 0x50 &&
-          buffer[offset + 2] === 0x4e &&
-          buffer[offset + 3] === 0x47 &&
-          buffer[offset + 4] === 0x0d &&
-          buffer[offset + 5] === 0x0a &&
-          buffer[offset + 6] === 0x1a &&
-          buffer[offset + 7] === 0x0a
+          buffer[offset] === 0xff &&
+          buffer[offset + 1] === 0xd8 &&
+          buffer[offset + 2] === 0xff
         ) {
           const start = offset;
           let end = -1;
-          for (let i = start + 8; i < Math.min(start + 3000000, buffer.length - 4); i++) {
-            if (
-              buffer[i] === 0x49 &&
-              buffer[i + 1] === 0x45 &&
-              buffer[i + 2] === 0x4e &&
-              buffer[i + 3] === 0x44
-            ) {
-              end = i + 8;
+          for (let i = start + 3; i < Math.min(start + 3000000, buffer.length - 1); i++) {
+            if (buffer[i] === 0xff && buffer[i + 1] === 0xd9) {
+              end = i + 2;
               break;
             }
           }
           if (end !== -1) {
             const imgBuffer = buffer.subarray(start, end);
-            if (imgBuffer.length > 4000) {
+            const headerHex = imgBuffer.subarray(0, 40).toString('hex').toLowerCase();
+            const isValidJpegHeader =
+              headerHex.includes('4a464946') ||
+              headerHex.includes('45786966') ||
+              headerHex.startsWith('ffd8ffe0') ||
+              headerHex.startsWith('ffd8ffe1') ||
+              headerHex.startsWith('ffd8ffed') ||
+              headerHex.startsWith('ffd8ffee') ||
+              headerHex.startsWith('ffd8ffdb');
+
+            if (imgBuffer.length > 4000 && isValidJpegHeader) {
               const base64 = imgBuffer.toString('base64');
-              console.log(`[PDF_IMAGES] Image/Schéma PNG valide extrait (${imgBuffer.length} octets)`);
-              images.push(`data:image/png;base64,${base64}`);
+              images.push(`data:image/jpeg;base64,${base64}`);
             }
             offset = end;
             continue;
@@ -133,12 +119,12 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
         }
         offset++;
       }
+    } catch (err) {
+      console.error('[PDF_IMAGES] Erreur scanner binaire:', err);
     }
-  } catch (err) {
-    console.error('[PDF_IMAGES] Erreur lors de l\'extraction d\'images:', err);
   }
 
-  console.log(`[PDF_IMAGES] Total schémas valides extraits: ${images.length}`);
+  console.log(`[PDF_IMAGES] Total schémas valides extraits du PDF: ${images.length}`);
   return images;
 }
 
@@ -188,9 +174,9 @@ export async function POST(request: NextRequest) {
       };
       statusLogs.push(`Préparation de l'analyse multimodale Gemini (Vision OCR activée).`);
 
-      // 2. Extraction des schémas/images intégrés au PDF
-      extractedImages = extractImagesFromPdfBuffer(buffer);
-      statusLogs.push(`${extractedImages.length} image(s)/schéma(s) matriciel(s) binaire(s) extrait(s) du PDF.`);
+      // 2. Extraction des schémas/images intégrés au PDF via unpdf & scanner
+      extractedImages = await extractImagesFromPdfBuffer(buffer);
+      statusLogs.push(`${extractedImages.length} image(s)/schéma(s) extrait(s) du PDF via unpdf & scanner.`);
 
       // 3. Extraction optionnelle de texte brut via pdf-parse
       try {
