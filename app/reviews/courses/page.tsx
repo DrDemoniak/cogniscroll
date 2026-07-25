@@ -67,6 +67,9 @@ export default function CustomCoursesPage() {
     mode: 'quiz' | 'flashcards';
   } | null>(null);
 
+  // Rapport de diagnostic d'analyse PDF
+  const [lastDebugInfo, setLastDebugInfo] = useState<any>(null);
+
   // Flashcards state
   const [fcIndex, setFcIndex] = useState(0);
   const [fcIsFlipped, setFcIsFlipped] = useState(false);
@@ -119,6 +122,10 @@ export default function CustomCoursesPage() {
 
       const generatedData = await res.json();
       console.log('[COURSES] Questions générées par l\'IA:', generatedData.questions.length);
+
+      if (generatedData.debugInfo) {
+        setLastDebugInfo(generatedData.debugInfo);
+      }
 
       // Enregistrement dans Firestore
       const courseId = await saveCustomCourse(user.uid, {
@@ -517,6 +524,20 @@ export default function CustomCoursesPage() {
                     )}
                   </button>
                 </form>
+
+                {/* Bandeau de diagnostic ultra-détaillé */}
+                {lastDebugInfo && (
+                  <div style={{ marginTop: 'var(--space-6)', padding: 'var(--space-4)', background: 'var(--surface-secondary)', borderRadius: 'var(--radius-md)', borderLeft: '4px solid var(--primary)', fontSize: '0.85rem' }}>
+                    <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                      📊 Rapport de diagnostic d'analyse du PDF :
+                    </strong>
+                    <ul style={{ margin: 0, paddingLeft: 'var(--space-4)', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+                      {lastDebugInfo.statusLog?.map((log: string, idx: number) => (
+                        <li key={idx}>{log}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               {/* Modal/Vue Éditeur d'un cours sélectionné */}

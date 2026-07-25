@@ -145,11 +145,14 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
 export async function POST(request: NextRequest) {
   console.log('[COURSE_CARDS_API] Demande de génération de cartes de cours (Multimodal PDF & Bounding Box Crop)');
 
+  const statusLogs: string[] = [];
+
   try {
     let courseText = '';
     let courseTitle = 'Mon Cours';
     let extractedImages: string[] = [];
     let pdfPart: any = null;
+    let pageCount = 0;
 
     const contentType = request.headers.get('content-type') || '';
 
@@ -174,7 +177,7 @@ export async function POST(request: NextRequest) {
       }
 
       const buffer = Buffer.from(await file.arrayBuffer());
-      console.log('[COURSE_CARDS_API] Fichier PDF reçu:', file.name, 'Taille:', buffer.length, 'octets');
+      statusLogs.push(`Fichier PDF "${file.name}" reçu (${buffer.length} octets).`);
 
       // 1. Envoi multimodal direct du PDF à Gemini en InlineData
       pdfPart = {
@@ -183,21 +186,26 @@ export async function POST(request: NextRequest) {
           mimeType: 'application/pdf',
         },
       };
+      statusLogs.push(`Préparation de l'analyse multimodale Gemini (Vision OCR activée).`);
 
       // 2. Extraction des schémas/images intégrés au PDF
       extractedImages = extractImagesFromPdfBuffer(buffer);
+      statusLogs.push(`${extractedImages.length} image(s)/schéma(s) matriciel(s) binaire(s) extrait(s) du PDF.`);
 
       // 3. Extraction optionnelle de texte brut via pdf-parse
       try {
         const parsed = await pdfParse(buffer);
         courseText = parsed.text || '';
+        pageCount = parsed.numpages || 0;
+        statusLogs.push(`Texte brut lu via pdf-parse: ${courseText.length} caractères, ${pageCount} pages.`);
       } catch (e) {
-        console.warn('[COURSE_CARDS_API] pdf-parse n\'a pas pu lire le texte brut, passage en mode 100% multimodal OCR.');
+        statusLogs.push(`pdf-parse n'a pas pu extraire de texte brut (PDF scanné ou vectoriel pur). Passage en mode OCR Gemini Vision.`);
       }
     } else {
       const body = await request.json();
       courseText = body.text || '';
       courseTitle = body.title || 'Mon Cours';
+      statusLogs.push(`Format Texte reçu (${courseText.length} caractères).`);
     }
 
     const hasImagesPrompt = extractedImages.length > 0
@@ -248,7 +256,7 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
 
     // Appel à l'API Gemini : si pdfPart est présent, on envoie à la fois le PDF et le prompt (multimodal)
     const contentsArray = pdfPart ? [pdfPart, prompt] : [prompt];
-    console.log('[COURSE_CARDS_API] Envoi de la requête à Gemini (Multimodal:', !!pdfPart, ')');
+    statusLogs.push(`Envoi de la requête à l'API Gemini Vision.`);
 
     const result = await model.generateContent(contentsArray);
     const responseText = result.response.text();
@@ -259,17 +267,19 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
     } catch {
       console.error('[COURSE_CARDS_API] Erreur parsing JSON:', responseText.slice(0, 200));
       return NextResponse.json(
-        { error: 'Réponse JSON invalide de l\'IA' },
+        { error: 'Réponse JSON invalide de l\'IA', debugInfo: { statusLog: statusLogs } },
         { status: 500 }
       );
     }
 
     if (!data.questions || !Array.isArray(data.questions)) {
       return NextResponse.json(
-        { error: 'Structure de questions invalide' },
+        { error: 'Structure de questions invalide', debugInfo: { statusLog: statusLogs } },
         { status: 500 }
       );
     }
+
+    let croppedCount = 0;
 
     // Formatage des questions avec réattribution et découpage (Crop) des schémas par Bounding Box
     const formattedQuestions = await Promise.all(
@@ -280,6 +290,7 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
           const rawUri = extractedImages[q.imageIndex];
           if (Array.isArray(q.boundingBox) && q.boundingBox.length === 4) {
             imageUrl = await cropImageWithBoundingBox(rawUri, q.boundingBox as [number, number, number, number]);
+            if (imageUrl !== rawUri) croppedCount++;
           } else {
             imageUrl = rawUri;
           }
@@ -297,17 +308,33 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
       })
     );
 
-    console.log('[COURSE_CARDS_API] Succès !', formattedQuestions.length, 'questions générées.');
+    const schemasAssignedCount = formattedQuestions.filter(q => !!q.imageUrl).length;
+    statusLogs.push(`Analyse terminée : ${formattedQuestions.length} questions créées, ${schemasAssignedCount} schéma(s) assigné(s), ${croppedCount} rognage(s) Bounding Box.`);
+
+    const debugInfo = {
+      pdfPagesCount: pageCount,
+      extractedImagesCount: extractedImages.length,
+      geminiSchemasDetected: schemasAssignedCount,
+      croppedSchemasCount: croppedCount,
+      statusLog: statusLogs,
+    };
+
+    console.log('[COURSE_CARDS_API] Succès ! Diagnostic:', debugInfo);
 
     return NextResponse.json({
       title: data.title || courseTitle,
       questions: formattedQuestions,
+      debugInfo: debugInfo,
     });
 
   } catch (err: any) {
     console.error('[COURSE_CARDS_API] Erreur serveur:', err?.message);
     return NextResponse.json(
-      { error: 'Erreur lors du traitement du document PDF' },
+      {
+        error: 'Erreur lors du traitement du document PDF',
+        details: err?.message || 'Erreur inconnue',
+        debugInfo: { statusLog: statusLogs },
+      },
       { status: 500 }
     );
   }
