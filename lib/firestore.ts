@@ -383,9 +383,15 @@ export async function saveCustomCourse(
 ): Promise<string> {
   console.log('[FIRESTORE] Sauvegarde cours personnalisé:', course.title);
   const ref = collection(db, 'users', uid, 'customCourses');
-  const docRef = await addDoc(ref, {
+  
+  // Assainissement de sécurité : suppression de toutes les propriétés `undefined` non supportées par Firestore
+  const cleanData = JSON.parse(JSON.stringify({
     ...course,
     uid,
+  }));
+
+  const docRef = await addDoc(ref, {
+    ...cleanData,
     createdAt: serverTimestamp(),
   });
   return docRef.id;
@@ -422,7 +428,8 @@ export async function updateCustomCourse(
   updates: Partial<CustomCourse>
 ): Promise<void> {
   console.log('[FIRESTORE] Mise à jour cours:', courseId, Object.keys(updates));
-  await updateDoc(doc(db, 'users', uid, 'customCourses', courseId), updates as any);
+  const cleanUpdates = JSON.parse(JSON.stringify(updates));
+  await updateDoc(doc(db, 'users', uid, 'customCourses', courseId), cleanUpdates);
 }
 
 /** Supprime un cours personnalisé */

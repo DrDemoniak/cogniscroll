@@ -304,6 +304,9 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
     const schemasAssignedCount = formattedQuestions.filter(q => !!q.imageUrl).length;
     statusLogs.push(`Analyse terminée : ${formattedQuestions.length} questions créées, ${schemasAssignedCount} schéma(s) assigné(s) (${croppedCount} rognage(s) Bounding Box, ${svgCount} schéma(s) vectoriel(s) SVG générés).`);
 
+    // Purge de toutes les propriétés undefined pour compatibilité totale Firestore
+    const cleanedQuestions = JSON.parse(JSON.stringify(formattedQuestions));
+
     const debugInfo = {
       pdfPagesCount: pageCount,
       extractedImagesCount: extractedImages.length,
@@ -317,7 +320,7 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
 
     return NextResponse.json({
       title: data.title || courseTitle,
-      questions: formattedQuestions,
+      questions: cleanedQuestions,
       debugInfo: debugInfo,
     });
 
