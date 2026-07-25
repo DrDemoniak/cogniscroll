@@ -1,10 +1,6 @@
-/**
- * app/api/generate-course-cards/route.ts
- * Route API pour analyser un cours (PDF ou texte) et générer des questions/flashcards.
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { Jimp } from 'jimp';
 // @ts-ignore
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 
@@ -17,6 +13,41 @@ const model = genAI.getGenerativeModel({
     maxOutputTokens: 2048,
   },
 });
+
+/** Découpe une zone rectangulaire [ymin, xmin, ymax, xmax] (coordonnées 0-1000) dans une Data URI d'image avec Jimp */
+async function cropImageWithBoundingBox(
+  base64DataUri: string,
+  box: [number, number, number, number]
+): Promise<string> {
+  try {
+    const [ymin, xmin, ymax, xmax] = box;
+    if (ymin === undefined || xmin === undefined || ymax === undefined || xmax === undefined) {
+      return base64DataUri;
+    }
+
+    const base64Data = base64DataUri.replace(/^data:image\/\w+;base64,/, '');
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+
+    const image = await Jimp.read(imageBuffer);
+    const width = image.bitmap.width;
+    const height = image.bitmap.height;
+
+    const cropX = Math.max(0, Math.floor((xmin / 1000) * width));
+    const cropY = Math.max(0, Math.floor((ymin / 1000) * height));
+    const cropWidth = Math.min(width - cropX, Math.ceil(((xmax - xmin) / 1000) * width));
+    const cropHeight = Math.min(height - cropY, Math.ceil(((ymax - ymin) / 1000) * height));
+
+    if (cropWidth > 30 && cropHeight > 30) {
+      image.crop({ x: cropX, y: cropY, w: cropWidth, h: cropHeight });
+      const croppedBuffer = await image.getBuffer('image/png');
+      console.log(`[CROP_IMAGES] Schéma découpé avec succès par Bounding Box Gemini (${cropWidth}x${cropHeight} px) !`);
+      return `data:image/png;base64,${croppedBuffer.toString('base64')}`;
+    }
+  } catch (err) {
+    console.error('[CROP_IMAGES] Erreur lors du découpage par Bounding Box:', err);
+  }
+  return base64DataUri;
+}
 
 /** Extrait les vrais schémas/images (JPEG/PNG) intégrés au PDF sous forme de Data URIs */
 function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
@@ -41,7 +72,6 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
         if (end !== -1) {
           const imgBuffer = buffer.subarray(start, end);
           const headerHex = imgBuffer.subarray(0, 40).toString('hex').toLowerCase();
-          // Vérification que le sous-buffer est un JPEG valide (JFIF, EXIF, ou stream DCTDecode standard)
           const isValidJpegHeader =
             headerHex.includes('4a464946') ||
             headerHex.includes('45786966') ||
@@ -113,7 +143,7 @@ function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
 }
 
 export async function POST(request: NextRequest) {
-  console.log('[COURSE_CARDS_API] Demande de génération de cartes de cours (Multimodal PDF)');
+  console.log('[COURSE_CARDS_API] Demande de génération de cartes de cours (Multimodal PDF & Bounding Box Crop)');
 
   try {
     let courseText = '';
@@ -146,7 +176,7 @@ export async function POST(request: NextRequest) {
       const buffer = Buffer.from(await file.arrayBuffer());
       console.log('[COURSE_CARDS_API] Fichier PDF reçu:', file.name, 'Taille:', buffer.length, 'octets');
 
-      // 1. Envoi multimodal direct du PDF à Gemini en InlineData (supporte PDF scannés et complexes)
+      // 1. Envoi multimodal direct du PDF à Gemini en InlineData
       pdfPart = {
         inlineData: {
           data: buffer.toString('base64'),
@@ -171,7 +201,8 @@ export async function POST(request: NextRequest) {
     }
 
     const hasImagesPrompt = extractedImages.length > 0
-      ? `- ${extractedImages.length} schémas/illustrations ont été extraits du document PDF (index de 0 à ${extractedImages.length - 1}). Si une question concerne directement la lecture, le repérage ou l'analyse d'un schéma du cours, inclut le champ \`imageIndex: N\` (ex: \`imageIndex: 0\`).`
+      ? `- ${extractedImages.length} schémas/illustrations ont été extraits du document PDF (index de 0 à ${extractedImages.length - 1}). Si une question concerne directement la lecture, le repérage ou l'analyse d'un schéma du cours, inclut le champ \`imageIndex: N\` (ex: \`imageIndex: 0\`).
+- Pour découper précisément le schéma dans l'image, fournis le champ \`boundingBox: [ymin, xmin, ymax, xmax]\` (coordonnées normalisées de 0 à 1000 encadrant uniquement la figure/schéma sans les marges blanches).`
       : '';
 
     const textContextPrompt = courseText.trim()
@@ -208,7 +239,8 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
       "options": ["C'est...", "Option B", "Option C", "Option D"],
       "correctIndex": 0,
       "explanation": "Explication courte.",
-      "imageIndex": 0
+      "imageIndex": 0,
+      "boundingBox": [100, 50, 600, 950]
     }
   ]
 }
@@ -239,24 +271,31 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
       );
     }
 
-    // Formatage des questions avec réattribution des images de schémas
-    const formattedQuestions = data.questions.map((q: any, i: number) => {
-      let imageUrl: string | undefined = undefined;
+    // Formatage des questions avec réattribution et découpage (Crop) des schémas par Bounding Box
+    const formattedQuestions = await Promise.all(
+      data.questions.map(async (q: any, i: number) => {
+        let imageUrl: string | undefined = undefined;
 
-      if (typeof q.imageIndex === 'number' && extractedImages[q.imageIndex]) {
-        imageUrl = extractedImages[q.imageIndex];
-      }
+        if (typeof q.imageIndex === 'number' && extractedImages[q.imageIndex]) {
+          const rawUri = extractedImages[q.imageIndex];
+          if (Array.isArray(q.boundingBox) && q.boundingBox.length === 4) {
+            imageUrl = await cropImageWithBoundingBox(rawUri, q.boundingBox as [number, number, number, number]);
+          } else {
+            imageUrl = rawUri;
+          }
+        }
 
-      return {
-        id: q.id || `q_${Date.now()}_${i}`,
-        question: q.question,
-        answer: q.answer || q.options?.[q.correctIndex || 0] || '',
-        options: q.options || [q.answer, 'Option B', 'Option C', 'Option D'],
-        correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
-        explanation: q.explanation || '',
-        imageUrl: imageUrl,
-      };
-    });
+        return {
+          id: q.id || `q_${Date.now()}_${i}`,
+          question: q.question,
+          answer: q.answer || q.options?.[q.correctIndex || 0] || '',
+          options: q.options || [q.answer, 'Option B', 'Option C', 'Option D'],
+          correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+          explanation: q.explanation || '',
+          imageUrl: imageUrl,
+        };
+      })
+    );
 
     console.log('[COURSE_CARDS_API] Succès !', formattedQuestions.length, 'questions générées.');
 
