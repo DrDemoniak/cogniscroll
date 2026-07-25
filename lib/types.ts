@@ -72,6 +72,7 @@ export interface QuizQuestion {
   options: string[];    // 4 options
   correctIndex: number; // index de la bonne réponse (0-3)
   explanation: string;  // explication affichée en cas d'erreur
+  imageUrl?: string;     // URL ou Data URI du schéma/image de la question
 }
 
 export interface QuizSession {
@@ -166,6 +167,7 @@ export interface CourseQuestion {
   options: string[];
   correctIndex: number;
   explanation: string;
+  imageUrl?: string;
 }
 
 export interface CustomCourse {

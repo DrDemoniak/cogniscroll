@@ -18,12 +18,91 @@ const model = genAI.getGenerativeModel({
   },
 });
 
+/** Extrait les images/schémas (JPEG/PNG) intégrés au PDF sous forme de Data URIs */
+function extractImagesFromPdfBuffer(buffer: Buffer): string[] {
+  const images: string[] = [];
+  try {
+    let offset = 0;
+    // 1. Extraction des JPEG (Marqueur de début \xFF\xD8\xFF et fin \xFF\xD9)
+    while (offset < buffer.length - 4 && images.length < 5) {
+      if (
+        buffer[offset] === 0xff &&
+        buffer[offset + 1] === 0xd8 &&
+        buffer[offset + 2] === 0xff
+      ) {
+        const start = offset;
+        let end = -1;
+        for (let i = start + 3; i < Math.min(start + 1500000, buffer.length - 1); i++) {
+          if (buffer[i] === 0xff && buffer[i + 1] === 0xd9) {
+            end = i + 2;
+            break;
+          }
+        }
+        if (end !== -1) {
+          const imgBuffer = buffer.subarray(start, end);
+          // On garde uniquement les schémas/images de taille significative (ex: > 3 Ko)
+          if (imgBuffer.length > 3000) {
+            const base64 = imgBuffer.toString('base64');
+            images.push(`data:image/jpeg;base64,${base64}`);
+          }
+          offset = end;
+          continue;
+        }
+      }
+      offset++;
+    }
+
+    // 2. Extraction des PNG (Marqueur \x89PNG) si peu de JPEG
+    if (images.length < 3) {
+      offset = 0;
+      while (offset < buffer.length - 8 && images.length < 5) {
+        if (
+          buffer[offset] === 0x89 &&
+          buffer[offset + 1] === 0x50 &&
+          buffer[offset + 2] === 0x4e &&
+          buffer[offset + 3] === 0x47
+        ) {
+          const start = offset;
+          let end = -1;
+          for (let i = start + 8; i < Math.min(start + 1500000, buffer.length - 4); i++) {
+            if (
+              buffer[i] === 0x49 &&
+              buffer[i + 1] === 0x45 &&
+              buffer[i + 2] === 0x4e &&
+              buffer[i + 3] === 0x44
+            ) {
+              end = i + 8;
+              break;
+            }
+          }
+          if (end !== -1) {
+            const imgBuffer = buffer.subarray(start, end);
+            if (imgBuffer.length > 3000) {
+              const base64 = imgBuffer.toString('base64');
+              images.push(`data:image/png;base64,${base64}`);
+            }
+            offset = end;
+            continue;
+          }
+        }
+        offset++;
+      }
+    }
+  } catch (err) {
+    console.error('[PDF_IMAGES] Erreur lors de l\'extraction d\'images:', err);
+  }
+
+  console.log(`[PDF_IMAGES] Total schémas/images extraits du PDF: ${images.length}`);
+  return images;
+}
+
 export async function POST(request: NextRequest) {
   console.log('[COURSE_CARDS_API] Demande de génération de cartes de cours');
 
   try {
     let courseText = '';
     let courseTitle = 'Mon Cours';
+    let extractedImages: string[] = [];
 
     const contentType = request.headers.get('content-type') || '';
 
@@ -51,6 +130,9 @@ export async function POST(request: NextRequest) {
       const buffer = Buffer.from(await file.arrayBuffer());
       console.log('[COURSE_CARDS_API] Extrait du PDF:', file.name, 'Taille:', buffer.length, 'octets');
 
+      // Extraction des schémas/images
+      extractedImages = extractImagesFromPdfBuffer(buffer);
+
       const parsed = await pdfParse(buffer);
       courseText = parsed.text || '';
 
@@ -73,10 +155,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Tronque si le document est extrêmement long (garder les ~15000 premiers caractères pour Gemini)
+    // Tronque si le document est extrêmement long
     const truncatedText = courseText.slice(0, 15000);
 
     console.log('[COURSE_CARDS_API] Analyse du texte de cours (longueur:', truncatedText.length, 'caractères)');
+
+    const hasImagesPrompt = extractedImages.length > 0
+      ? `- ${extractedImages.length} schémas/illustrations ont été extraits du document PDF (index de 0 à ${extractedImages.length - 1}). Si une question concerne la lecture, le repérage ou l'analyse d'un schéma du cours, inclut le champ \`imageIndex: N\` (ex: \`imageIndex: 0\`).`
+      : '';
 
     const prompt = `
 Tu es un professeur et créateur de contenu pédagogique expert.
@@ -89,6 +175,7 @@ ${truncatedText}
 
 Règles OBLIGATOIRES :
 - Génère entre 6 et 10 questions pertinentes couvrant l'ensemble des notions importantes de ce cours.
+${hasImagesPrompt}
 - Pour chaque question :
   - "question" : Question claire et précise.
   - "answer" : Réponse exacte et concise (pour le verso de la flash card).
@@ -107,7 +194,8 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
       "answer": "C'est...",
       "options": ["C'est...", "Option B", "Option C", "Option D"],
       "correctIndex": 0,
-      "explanation": "Explication courte."
+      "explanation": "Explication courte.",
+      "imageIndex": 0
     }
   ]
 }
@@ -134,15 +222,27 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
       );
     }
 
-    // Ajoute un ID unique à chaque question si manquant
-    const formattedQuestions = data.questions.map((q: any, i: number) => ({
-      id: q.id || `q_${Date.now()}_${i}`,
-      question: q.question,
-      answer: q.answer || q.options?.[q.correctIndex || 0] || '',
-      options: q.options || [q.answer, 'Option B', 'Option C', 'Option D'],
-      correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
-      explanation: q.explanation || '',
-    }));
+    // Formatage des questions avec réattribution des images de schémas
+    const formattedQuestions = data.questions.map((q: any, i: number) => {
+      let imageUrl: string | undefined = undefined;
+
+      if (typeof q.imageIndex === 'number' && extractedImages[q.imageIndex]) {
+        imageUrl = extractedImages[q.imageIndex];
+      } else if (extractedImages.length > 0 && (i === 0 || i === 1) && extractedImages[i]) {
+        // Associe par défaut les schémas aux premières questions si non spécifié
+        imageUrl = extractedImages[i];
+      }
+
+      return {
+        id: q.id || `q_${Date.now()}_${i}`,
+        question: q.question,
+        answer: q.answer || q.options?.[q.correctIndex || 0] || '',
+        options: q.options || [q.answer, 'Option B', 'Option C', 'Option D'],
+        correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+        explanation: q.explanation || '',
+        imageUrl: imageUrl,
+      };
+    });
 
     console.log('[COURSE_CARDS_API] Succès !', formattedQuestions.length, 'questions générées.');
 

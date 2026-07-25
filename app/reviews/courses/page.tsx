@@ -54,6 +54,7 @@ export default function CustomCoursesPage() {
   const [qOption3, setQOption3] = useState('');
   const [qCorrectIndex, setQCorrectIndex] = useState(0);
   const [qExplanation, setQExplanation] = useState('');
+  const [qImageUrl, setQImageUrl] = useState('');
 
   // Génération de N questions supplémentaires par l'IA
   const [isGenerateMoreModal, setIsGenerateMoreModal] = useState(false);
@@ -171,6 +172,7 @@ export default function CustomCoursesPage() {
       setQOption3(q.options[3] || '');
       setQCorrectIndex(q.correctIndex || 0);
       setQExplanation(q.explanation || '');
+      setQImageUrl(q.imageUrl || '');
     } else {
       setEditingQuestion(null);
       setQQuestion('');
@@ -181,6 +183,7 @@ export default function CustomCoursesPage() {
       setQOption3('');
       setQCorrectIndex(0);
       setQExplanation('');
+      setQImageUrl('');
     }
     setIsAddQuestionModal(true);
   };
@@ -210,6 +213,7 @@ export default function CustomCoursesPage() {
               options,
               correctIndex: qCorrectIndex,
               explanation: qExplanation.trim(),
+              imageUrl: qImageUrl.trim() || undefined,
             }
           : q
       );
@@ -222,6 +226,7 @@ export default function CustomCoursesPage() {
         options,
         correctIndex: qCorrectIndex,
         explanation: qExplanation.trim(),
+        imageUrl: qImageUrl.trim() || undefined,
       };
       updatedQuestions = [...editingCourse.questions, newQ];
     }
@@ -381,7 +386,16 @@ export default function CustomCoursesPage() {
                             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 'var(--space-4)' }}>
                               Question
                             </span>
-                            <p style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {activeSession.course.questions[fcIndex].imageUrl && (
+                              <div style={{ marginBottom: 'var(--space-3)', maxHeight: 160, overflow: 'hidden', borderRadius: 'var(--radius-md)' }}>
+                                <img
+                                  src={activeSession.course.questions[fcIndex].imageUrl}
+                                  alt="Schéma"
+                                  style={{ width: '100%', maxHeight: 160, objectFit: 'contain' }}
+                                />
+                              </div>
+                            )}
+                            <p style={{ fontSize: '1.15rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                               {activeSession.course.questions[fcIndex].question}
                             </p>
                             <span className="flashcard-hint">👆 Clique pour voir la réponse</span>
@@ -392,6 +406,15 @@ export default function CustomCoursesPage() {
                             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 'var(--space-3)' }}>
                               Réponse
                             </span>
+                            {activeSession.course.questions[fcIndex].imageUrl && (
+                              <div style={{ marginBottom: 'var(--space-2)', maxHeight: 120, overflow: 'hidden', borderRadius: 'var(--radius-md)' }}>
+                                <img
+                                  src={activeSession.course.questions[fcIndex].imageUrl}
+                                  alt="Schéma"
+                                  style={{ width: '100%', maxHeight: 120, objectFit: 'contain' }}
+                                />
+                              </div>
+                            )}
                             <p style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--secondary)', marginBottom: 'var(--space-3)' }}>
                               {activeSession.course.questions[fcIndex].answer}
                             </p>
@@ -528,7 +551,7 @@ export default function CustomCoursesPage() {
                       >
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <strong style={{ display: 'block', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-                            {idx + 1}. {q.question}
+                            {idx + 1}. {q.question} {q.imageUrl ? '🖼️ (avec schéma)' : ''}
                           </strong>
                           <span className="text-sm text-muted">
                             Réponse : <strong style={{ color: 'var(--primary)' }}>{q.answer}</strong>
@@ -609,6 +632,22 @@ export default function CustomCoursesPage() {
                       <div>
                         <label className="form-label">Explication (optionnelle)</label>
                         <textarea className="form-input" rows={2} value={qExplanation} onChange={e => setQExplanation(e.target.value)} />
+                      </div>
+
+                      <div>
+                        <label className="form-label">Image / Schéma de la question (URL ou Base64)</label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="data:image/jpeg;base64,... ou https://..."
+                          value={qImageUrl}
+                          onChange={e => setQImageUrl(e.target.value)}
+                        />
+                        {qImageUrl && (
+                          <div style={{ marginTop: 'var(--space-2)', maxHeight: 100, overflow: 'hidden' }}>
+                            <img src={qImageUrl} alt="Aperçu schéma" style={{ maxHeight: 100, objectFit: 'contain', borderRadius: 'var(--radius-sm)' }} />
+                          </div>
+                        )}
                       </div>
 
                       <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'flex-end', marginTop: 'var(--space-4)' }}>

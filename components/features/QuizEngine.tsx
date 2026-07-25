@@ -50,6 +50,18 @@ export default function QuizEngine({ questions, onComplete, theme }: { questions
   return (
     <div className="quiz-container">
       <div className="progress-bar"><div className="progress-bar-fill" style={{width: `${progress}%`}}></div></div>
+      
+      {/* Affichage du schéma s'il est présent */}
+      {q.imageUrl && (
+        <div style={{ margin: 'var(--space-4) 0', textAlign: 'center', maxHeight: 260, overflow: 'hidden', borderRadius: 'var(--radius-lg)', background: 'var(--surface-secondary, #f8fafc)', padding: 'var(--space-2)' }}>
+          <img
+            src={q.imageUrl}
+            alt="Schéma associé à la question"
+            style={{ maxWidth: '100%', maxHeight: 250, objectFit: 'contain', borderRadius: 'var(--radius-md)' }}
+          />
+        </div>
+      )}
+
       <div className="quiz-question">Question {currentIdx + 1}/{questions.length} : {q.question}</div>
       <div className="quiz-options">
         {q.options.map((opt, i) => {
