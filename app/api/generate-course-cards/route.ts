@@ -36,35 +36,21 @@ function sanitizeQuestionForFirestore(q: any, i: number = 0): Record<string, any
 }
 
 
-/** Convertit un objet image issu d'unpdf ou du scanner en une VRAIE Data URI PNG/JPEG valide et lisible par la balise <img> */
+/** Convertit un objet image issu d'unpdf ou du scanner en une VRAIE Data URI JPEG compressée valide et lisible par la balise <img> */
 async function processExtractedPdfImage(img: any): Promise<string | null> {
   try {
     if (!img) return null;
 
-    // Si c'est déjà une chaîne Data URI valide
+    let rawBuffer: Buffer | null = null;
+    let originalWidth = 0;
+    let originalHeight = 0;
+    let needsRgbaConversion = false;
+
+    // 1. Extraction du Buffer selon le type de donnée entrant
     if (typeof img === 'string' && img.startsWith('data:image/')) {
       const base64Data = img.replace(/^data:image\/\w+;base64,/, '');
-      const rawBuffer = Buffer.from(base64Data, 'base64');
-
-      if (
-        (rawBuffer.length > 2000 && rawBuffer[0] === 0xff && rawBuffer[1] === 0xd8 && rawBuffer[2] === 0xff) ||
-        (rawBuffer.length > 2000 && rawBuffer[0] === 0x89 && rawBuffer[1] === 0x50 && rawBuffer[2] === 0x4e)
-      ) {
-        return img;
-      }
-
-      try {
-        const jimpImage = await Jimp.read(rawBuffer);
-        const pngBuffer = await jimpImage.getBuffer('image/png');
-        console.log(`[IMAGE_CONVERTER] Image convertie et ré-encodée en PNG valide (${pngBuffer.length} octets) !`);
-        return `data:image/png;base64,${pngBuffer.toString('base64')}`;
-      } catch (e) {
-        return img;
-      }
-    }
-
-    // Si c'est un objet unpdf avec width, height et data (RGBA raw pixels)
-    if (img && img.data && (img.width || img.data.byteLength)) {
+      rawBuffer = Buffer.from(base64Data, 'base64');
+    } else if (img && img.data && (img.width || img.data.byteLength)) {
       // Filtrage strict HD Anti-Ampoule/Anti-Logo : élimination de toute image < 350x250 px ou < 25 KB
       if (img.width && img.height && (img.width < 350 || img.height < 250)) {
         console.log(`[HD_FILTER] Image parasite trop petite ignorée (${img.width}x${img.height} px) — élimination des ampoules/logos.`);
@@ -75,44 +61,72 @@ async function processExtractedPdfImage(img: any): Promise<string | null> {
         return null;
       }
 
-      const rawBuffer = Buffer.from(img.data);
-      if (
-        (rawBuffer.length > 25000 && rawBuffer[0] === 0xff && rawBuffer[1] === 0xd8 && rawBuffer[2] === 0xff) ||
-        (rawBuffer.length > 25000 && rawBuffer[0] === 0x89 && rawBuffer[1] === 0x50 && rawBuffer[2] === 0x4e)
-      ) {
+      rawBuffer = Buffer.from(img.data);
+      originalWidth = img.width;
+      originalHeight = img.height;
+
+      // Détection rapide de l'en-tête (JPEG = FFD8FF, PNG = 89504E)
+      const isJpeg = rawBuffer.length > 3 && rawBuffer[0] === 0xff && rawBuffer[1] === 0xd8 && rawBuffer[2] === 0xff;
+      const isPng = rawBuffer.length > 3 && rawBuffer[0] === 0x89 && rawBuffer[1] === 0x50 && rawBuffer[2] === 0x4e;
+
+      if (!isJpeg && !isPng && img.width && img.height) {
+        needsRgbaConversion = true;
+      }
+    }
+
+    if (!rawBuffer || rawBuffer.length === 0) return null;
+
+    // 2. Traitement et Compression via Jimp pour respecter la limite Firestore (1MB)
+    try {
+      let jimpImage: any;
+
+      if (needsRgbaConversion) {
+        let finalBuffer = rawBuffer;
+        if (rawBuffer.length === originalWidth * originalHeight * 3) {
+          console.log(`[RGB_TO_RGBA] Détection format RGB 24-bit (${originalWidth}x${originalHeight}). Conversion vers RGBA 32-bit.`);
+          finalBuffer = Buffer.alloc(originalWidth * originalHeight * 4);
+          for (let i = 0, j = 0; i < rawBuffer.length; i += 3, j += 4) {
+            finalBuffer[j] = rawBuffer[i];
+            finalBuffer[j + 1] = rawBuffer[i + 1];
+            finalBuffer[j + 2] = rawBuffer[i + 2];
+            finalBuffer[j + 3] = 255;
+          }
+        }
+        jimpImage = new Jimp({ width: originalWidth, height: originalHeight, data: finalBuffer });
+      } else {
+        jimpImage = await Jimp.read(rawBuffer);
+      }
+
+      // Redimensionnement dynamique si l'image est trop large
+      if (jimpImage.bitmap.width > 1200) {
+        jimpImage.resize(1200, -1);
+        console.log(`[IMAGE_COMPRESSION] Image redimensionnée à 1200px de large pour optimiser le poids.`);
+      }
+
+      // Compression en JPEG avec qualité à 80% (Gain énorme sur le poids base64)
+      jimpImage.quality(80);
+      
+      let jpegBuffer: Buffer;
+      if (typeof jimpImage.getBufferAsync === 'function') {
+        jpegBuffer = await jimpImage.getBufferAsync('image/jpeg');
+      } else {
+        jpegBuffer = await jimpImage.getBuffer('image/jpeg');
+      }
+
+      console.log(`[IMAGE_COMPRESSION] Image finalisée et compressée en JPEG (${jpegBuffer.length} octets).`);
+      return `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`;
+
+    } catch (jimpErr) {
+      console.warn('[IMAGE_COMPRESSION] Échec du traitement Jimp (fallback). Erreur:', jimpErr);
+      // Fallback de secours: si Jimp plante et que l'image fait moins de 700KB, on la renvoie brute
+      if (!needsRgbaConversion && rawBuffer.length < 700000) {
         const mime = rawBuffer[0] === 0xff ? 'image/jpeg' : 'image/png';
         return `data:${mime};base64,${rawBuffer.toString('base64')}`;
       }
-
-      if (img.width && img.height) {
-        try {
-          let finalBuffer = rawBuffer;
-
-          // Si le buffer est au format RGB (3 octets par pixel : width * height * 3)
-          if (rawBuffer.length === img.width * img.height * 3) {
-            console.log(`[RGB_TO_RGBA] Détection format RGB 24-bit (${img.width}x${img.height}). Conversion dynamique vers RGBA 32-bit pour éliminer la trame répétée !`);
-            finalBuffer = Buffer.alloc(img.width * img.height * 4);
-            for (let i = 0, j = 0; i < rawBuffer.length; i += 3, j += 4) {
-              finalBuffer[j] = rawBuffer[i];         // R
-              finalBuffer[j + 1] = rawBuffer[i + 1]; // G
-              finalBuffer[j + 2] = rawBuffer[i + 2]; // B
-              finalBuffer[j + 3] = 255;              // Alpha 100%
-            }
-          } else if (rawBuffer.length !== img.width * img.height * 4) {
-            console.log(`[IMAGE_CONVERTER] Taille buffer inattendue (${rawBuffer.length} octets pour ${img.width}x${img.height}). Tentative de réajustement...`);
-          }
-
-          const jimpImg = new Jimp({ width: img.width, height: img.height, data: finalBuffer });
-          const pngBuffer = await jimpImg.getBuffer('image/png');
-          console.log(`[IMAGE_CONVERTER] Pixels HD (${img.width}x${img.height}) convertis avec succès en PNG parfait sans bug (${pngBuffer.length} octets) !`);
-          return `data:image/png;base64,${pngBuffer.toString('base64')}`;
-        } catch (jimpErr) {
-          console.warn('[IMAGE_CONVERTER] Erreur encodage Jimp pixels RGBA:', jimpErr);
-        }
-      }
     }
+
   } catch (err) {
-    console.error('[IMAGE_CONVERTER] Erreur lors du traitement de l\'image:', err);
+    console.error('[IMAGE_CONVERTER] Erreur critique lors du traitement de l\'image:', err);
   }
   return null;
 }
