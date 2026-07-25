@@ -135,6 +135,38 @@ async function processExtractedPdfImage(img: any): Promise<string | null> {
   return null;
 }
 
+/** Extrait les schémas/images HD de chaque page du PDF et les mappe par numéro de page (1 à N) */
+async function extractImagesByPageFromPdf(buffer: Buffer): Promise<Map<number, string[]>> {
+  const pageMap = new Map<number, string[]>();
+  try {
+    const pdfData = new Uint8Array(buffer);
+    const pdf = await getDocumentProxy(pdfData);
+    const totalPages = Math.min(15, pdf.numPages);
+
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      const pageImages: string[] = [];
+      try {
+        const extracted = await extractImages(pdf, pageNum);
+        for (const img of extracted) {
+          if (img && img.data && img.data.byteLength > 20000) {
+            const validDataUri = await processExtractedPdfImage(img);
+            if (validDataUri) {
+              pageImages.push(validDataUri);
+              console.log(`[PAGE_MAP] Page ${pageNum} : Image HD conservée (${img.width}x${img.height} px) !`);
+            }
+          }
+        }
+      } catch (e) {}
+      if (pageImages.length > 0) {
+        pageMap.set(pageNum, pageImages);
+      }
+    }
+  } catch (err) {
+    console.error('[PAGE_MAP] Erreur construction carte de pages:', err);
+  }
+  return pageMap;
+}
+
 /** Extrait les vrais schémas/images (JPEG/PNG) intégrés au PDF sous forme de Data URIs via unpdf & scanner */
 async function extractImagesFromPdfBuffer(buffer: Buffer): Promise<string[]> {
   const images: string[] = [];
@@ -223,6 +255,7 @@ export async function POST(request: NextRequest) {
     let courseText = '';
     let courseTitle = 'Mon Cours';
     let extractedImages: string[] = [];
+    let imagesByPage = new Map<number, string[]>();
     let pdfPart: any = null;
     let pageCount = 0;
 
@@ -260,9 +293,10 @@ export async function POST(request: NextRequest) {
       };
       statusLogs.push(`Préparation de l'analyse multimodale Gemini (Vision OCR activée).`);
 
-      // 2. Extraction des schémas/images intégrés au PDF via unpdf & scanner
+      // 2. Extraction des schémas par numéro de page (1 à N)
+      imagesByPage = await extractImagesByPageFromPdf(buffer);
       extractedImages = await extractImagesFromPdfBuffer(buffer);
-      statusLogs.push(`${extractedImages.length} image(s)/schéma(s) extrait(s) du PDF via unpdf & scanner.`);
+      statusLogs.push(`${extractedImages.length} image(s)/schéma(s) extrait(s) sur ${imagesByPage.size} page(s).`);
 
       // 3. Extraction optionnelle de texte brut via pdf-parse
       try {
@@ -281,12 +315,13 @@ export async function POST(request: NextRequest) {
     }
 
     const hasImagesPrompt = extractedImages.length > 0
-      ? `- ${extractedImages.length} schémas/illustrations ont été extraits du document PDF (index de 0 à ${extractedImages.length - 1}).
-- RÈGLES DE SÉLECTION STRICTES :
-  1. Sélectionne PRIORITAIREMENT les vraies figures explicatives, mécanismes biologiques/médicaux ou diagrammes majeurs du cours, particulièrement ceux identifiés par une légende descriptive du type "Figure 1. [Titre]", "Figure 2. [Titre]", "Figure X" ou un titre de schéma explicatif.
+      ? `- ${extractedImages.length} schémas/illustrations ont été extraits du document PDF sur ${imagesByPage.size} page(s).
+- RÈGLES DE PRÉCISION STRICTES PAR PAGE :
+  1. Sélectionne PRIORITAIREMENT les vraies figures explicatives, mécanismes biologiques/médicaux ou diagrammes majeurs du cours, particulièrement ceux identifiés par une légende descriptive du type "Figure 1. [Titre]", "Figure 2. [Titre]", "Figure X" ou un titre de schéma.
   2. REJETTE STRICTEMENT les icônes d'ampoules 💡, puces graphiques "Pour information / Remarque", logos d'université, en-têtes ou éléments d'illustration décoratifs sans valeur pédagogique directe !
-  3. Si une question concerne une Figure ou schéma majeur, inclut le champ \`imageIndex: N\` (ex: \`imageIndex: 0\`) et la \`boundingBox: [ymin, xmin, ymax, xmax]\`.
-  4. IMPORTANT POUR LA BOUNDING BOX : Encadre l'ENSEMBLE de la figure ainsi que son titre/légende officiel (ex: "Figure 1. Cascade de la coagulation et anticoagulant") afin que le schéma découpé inclue son titre et sa légende explicative !`
+  3. Pour chaque question s'appuyant sur une Figure, indique :
+     - "pageNumber": N (le numéro de page EXACT du PDF de 1 à N où se situe la Figure ou schéma).
+     - "boundingBox": [ymin, xmin, ymax, xmax] (coordonnées normalisées de 0 à 1000 encadrant la Figure ET sa légende descriptive sur la page).`
       : `- AUCUNE image matricielle autonome n'a été extraite (le cours utilise des schémas dessinés en formes/textes vectoriels PowerPoint/Word). Pour au moins 2 questions portant sur les mécanismes ou diagrammes clés du cours, génère le champ \`svgSchema: "<svg viewBox='0 0 500 300' xmlns='http://www.w3.org/2000/svg'>...</svg>"\` représentant un schéma vectoriel SVG schématique, propre, coloré, clair et explicatif résumant la notion.`;
 
     const textContextPrompt = courseText.trim()
@@ -323,7 +358,7 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
       "options": ["C'est...", "Option B", "Option C", "Option D"],
       "correctIndex": 0,
       "explanation": "Explication courte.",
-      "imageIndex": 0,
+      "pageNumber": 2,
       "boundingBox": [100, 50, 600, 950],
       "svgSchema": "<svg viewBox='0 0 500 300' xmlns='http://www.w3.org/2000/svg'>...</svg>"
     }
@@ -359,12 +394,28 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
     let croppedCount = 0;
     let svgCount = 0;
 
-    // Formatage des questions avec réattribution, découpage (Crop) par Bounding Box ou Schémas SVG Vectoriels
+    // Formatage des questions avec réattribution infaillible par pageNumber & Bounding Box
     const formattedQuestions = await Promise.all(
       data.questions.map(async (q: any, i: number) => {
         let imageUrl: string | undefined = undefined;
 
-        if (typeof q.imageIndex === 'number' && extractedImages[q.imageIndex]) {
+        // 1. Essai prioritaire par numéro de page précis (pageNumber)
+        if (typeof q.pageNumber === 'number' && imagesByPage.has(q.pageNumber)) {
+          const pageImagesList = imagesByPage.get(q.pageNumber)!;
+          if (pageImagesList.length > 0) {
+            const rawUri = pageImagesList[0];
+            if (Array.isArray(q.boundingBox) && q.boundingBox.length === 4) {
+              imageUrl = await cropImageWithBoundingBox(rawUri, q.boundingBox as [number, number, number, number]);
+              if (imageUrl !== rawUri) croppedCount++;
+            } else {
+              imageUrl = rawUri;
+            }
+            console.log(`[PAGE_MATCH] Question ${i + 1} : Image associée avec certitude à la page ${q.pageNumber} !`);
+          }
+        }
+
+        // 2. Fallback par index global si pageNumber non trouvé
+        if (!imageUrl && typeof q.imageIndex === 'number' && extractedImages[q.imageIndex]) {
           const rawUri = extractedImages[q.imageIndex];
           if (Array.isArray(q.boundingBox) && q.boundingBox.length === 4) {
             imageUrl = await cropImageWithBoundingBox(rawUri, q.boundingBox as [number, number, number, number]);
@@ -372,8 +423,7 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
           } else {
             imageUrl = rawUri;
           }
-        } else if (q.svgSchema && typeof q.svgSchema === 'string' && q.svgSchema.includes('<svg')) {
-          // Si pas d'image binaire, conversion du SVG en Data URI pour affichage propre
+        } else if (!imageUrl && q.svgSchema && typeof q.svgSchema === 'string' && q.svgSchema.includes('<svg')) {
           const cleanSvg = q.svgSchema.trim().replace(/^```xml/, '').replace(/^```html/, '').replace(/^```svg/, '').replace(/```$/, '');
           imageUrl = `data:image/svg+xml;utf8,${encodeURIComponent(cleanSvg)}`;
           svgCount++;
