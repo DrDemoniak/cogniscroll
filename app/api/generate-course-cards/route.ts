@@ -211,7 +211,7 @@ export async function POST(request: NextRequest) {
     const hasImagesPrompt = extractedImages.length > 0
       ? `- ${extractedImages.length} schémas/illustrations ont été extraits du document PDF (index de 0 à ${extractedImages.length - 1}). Si une question concerne directement la lecture, le repérage ou l'analyse d'un schéma du cours, inclut le champ \`imageIndex: N\` (ex: \`imageIndex: 0\`).
 - Pour découper précisément le schéma dans l'image, fournis le champ \`boundingBox: [ymin, xmin, ymax, xmax]\` (coordonnées normalisées de 0 à 1000 encadrant uniquement la figure/schéma sans les marges blanches).`
-      : '';
+      : `- AUCUNE image matricielle autonome n'a été extraite (le cours utilise des schémas dessinés en formes/textes vectoriels PowerPoint/Word). Pour au moins 2 questions portant sur les mécanismes ou diagrammes clés du cours, génère le champ \`svgSchema: "<svg viewBox='0 0 500 300' xmlns='http://www.w3.org/2000/svg'>...</svg>"\` représentant un schéma vectoriel SVG schématique, propre, coloré, clair et explicatif résumant la notion.`;
 
     const textContextPrompt = courseText.trim()
       ? `Extrait de texte du cours :\n${courseText.slice(0, 15000)}\n`
@@ -248,7 +248,8 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
       "correctIndex": 0,
       "explanation": "Explication courte.",
       "imageIndex": 0,
-      "boundingBox": [100, 50, 600, 950]
+      "boundingBox": [100, 50, 600, 950],
+      "svgSchema": "<svg viewBox='0 0 500 300' xmlns='http://www.w3.org/2000/svg'>...</svg>"
     }
   ]
 }
@@ -280,8 +281,9 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
     }
 
     let croppedCount = 0;
+    let svgCount = 0;
 
-    // Formatage des questions avec réattribution et découpage (Crop) des schémas par Bounding Box
+    // Formatage des questions avec réattribution, découpage (Crop) par Bounding Box ou Schémas SVG Vectoriels
     const formattedQuestions = await Promise.all(
       data.questions.map(async (q: any, i: number) => {
         let imageUrl: string | undefined = undefined;
@@ -294,6 +296,11 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
           } else {
             imageUrl = rawUri;
           }
+        } else if (q.svgSchema && typeof q.svgSchema === 'string' && q.svgSchema.includes('<svg')) {
+          // Si pas d'image binaire, conversion du SVG en Data URI pour affichage propre
+          const cleanSvg = q.svgSchema.trim().replace(/^```xml/, '').replace(/^```html/, '').replace(/^```svg/, '').replace(/```$/, '');
+          imageUrl = `data:image/svg+xml;utf8,${encodeURIComponent(cleanSvg)}`;
+          svgCount++;
         }
 
         return {
@@ -309,13 +316,14 @@ Retourne UNIQUEMENT un JSON valide (sans markdown, pas de \`\`\`json) avec cette
     );
 
     const schemasAssignedCount = formattedQuestions.filter(q => !!q.imageUrl).length;
-    statusLogs.push(`Analyse terminée : ${formattedQuestions.length} questions créées, ${schemasAssignedCount} schéma(s) assigné(s), ${croppedCount} rognage(s) Bounding Box.`);
+    statusLogs.push(`Analyse terminée : ${formattedQuestions.length} questions créées, ${schemasAssignedCount} schéma(s) assigné(s) (${croppedCount} rognage(s) Bounding Box, ${svgCount} schéma(s) vectoriel(s) SVG générés).`);
 
     const debugInfo = {
       pdfPagesCount: pageCount,
       extractedImagesCount: extractedImages.length,
       geminiSchemasDetected: schemasAssignedCount,
       croppedSchemasCount: croppedCount,
+      svgSchemasCount: svgCount,
       statusLog: statusLogs,
     };
 
