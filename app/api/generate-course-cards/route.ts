@@ -278,8 +278,11 @@ export async function POST(request: NextRequest) {
 
     const hasImagesPrompt = extractedImages.length > 0
       ? `- ${extractedImages.length} schémas/illustrations ont été extraits du document PDF (index de 0 à ${extractedImages.length - 1}).
-- ATTENTION : Ne sélectionne QUE les VRAIS schémas explicatifs, mécanismes biologiques/médicaux ou diagrammes pédagogiques majeurs du cours ! Exclus STRICTEMENT les puces graphiques, logos d'université, en-têtes ou illustrations décoratives sans valeur pédagogique directe !
-- Si une question concerne un vrai schéma explicatif du cours, inclut le champ \`imageIndex: N\` (ex: \`imageIndex: 0\`) et la \`boundingBox: [ymin, xmin, ymax, xmax]\` (coordonnées normalisées de 0 à 1000 encadrant uniquement la figure sans les textes environnants).`
+- RÈGLES DE SÉLECTION STRICTES :
+  1. Sélectionne PRIORITAIREMENT les vraies figures explicatives, mécanismes biologiques/médicaux ou diagrammes majeurs du cours, particulièrement ceux identifiés par une légende descriptive du type "Figure 1. [Titre]", "Figure 2. [Titre]", "Figure X" ou un titre de schéma explicatif.
+  2. REJETTE STRICTEMENT les icônes d'ampoules 💡, puces graphiques "Pour information / Remarque", logos d'université, en-têtes ou éléments d'illustration décoratifs sans valeur pédagogique directe !
+  3. Si une question concerne une Figure ou schéma majeur, inclut le champ \`imageIndex: N\` (ex: \`imageIndex: 0\`) et la \`boundingBox: [ymin, xmin, ymax, xmax]\`.
+  4. IMPORTANT POUR LA BOUNDING BOX : Encadre l'ENSEMBLE de la figure ainsi que son titre/légende officiel (ex: "Figure 1. Cascade de la coagulation et anticoagulant") afin que le schéma découpé inclue son titre et sa légende explicative !`
       : `- AUCUNE image matricielle autonome n'a été extraite (le cours utilise des schémas dessinés en formes/textes vectoriels PowerPoint/Word). Pour au moins 2 questions portant sur les mécanismes ou diagrammes clés du cours, génère le champ \`svgSchema: "<svg viewBox='0 0 500 300' xmlns='http://www.w3.org/2000/svg'>...</svg>"\` représentant un schéma vectoriel SVG schématique, propre, coloré, clair et explicatif résumant la notion.`;
 
     const textContextPrompt = courseText.trim()
