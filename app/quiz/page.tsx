@@ -61,7 +61,25 @@ export default function QuizPage() {
 
         if (!res.ok) throw new Error('Erreur API quiz');
         const data = await res.json();
-        setQuestions(data.quiz.questions);
+        
+        let finalQuestions = data.quiz.questions;
+        // ── Injection des questions custom depuis le Chatbot ──
+        const customQ = sessionStorage.getItem('customQuizQuestions');
+        if (customQ) {
+          try {
+            const parsedCustomQ = JSON.parse(customQ);
+            if (Array.isArray(parsedCustomQ) && parsedCustomQ.length > 0) {
+              console.log('[QUIZ] Injection de', parsedCustomQ.length, 'question(s) personnalisée(s)');
+              finalQuestions = [...finalQuestions, ...parsedCustomQ];
+            }
+          } catch (e) {
+            console.error('[QUIZ] Erreur parsing customQuizQuestions', e);
+          }
+          // On nettoie pour ne pas les recharger au prochain quiz
+          sessionStorage.removeItem('customQuizQuestions');
+        }
+
+        setQuestions(finalQuestions);
       } catch (err) {
         console.error('[QUIZ] Erreur génération:', err);
         setError('Impossible de générer le quiz. Réessaie plus tard.');

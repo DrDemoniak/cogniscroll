@@ -13,6 +13,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import LessonChatbot from './LessonChatbot';
 import { useRouter, useParams } from 'next/navigation';
 import { LessonContent } from '@/lib/types';
 
@@ -371,6 +372,8 @@ export default function LessonReader({
           {goFurtherLoading ? '⏳ Génération...' : isDeeperExpanded ? '▲ Masquer l\'approfondissement' : '🚀 Aller plus loin sur ce sujet'}
         </button>
       </div>
+
+      <LessonChatbot lessonContent={lesson} />
     </div>
   );
 }

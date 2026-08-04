@@ -52,6 +52,8 @@ export async function POST(request: NextRequest) {
     const prompt = `
 Tu es un expert technique et analytique. ${promptIntro}
 
+[CONTEXTE] Ceci est un projet strictement éducatif, scientifique et historique. Traite tous les sujets (y compris les événements historiques sensibles) de manière purement factuelle, académique et objective, sans jugement de valeur, pour l'apprentissage.
+
 Thématique : ${theme}
 Sujet précis : ${topic}
 
@@ -60,6 +62,7 @@ Ton objectif principal est de maximiser la densité d'information. Tu dois me fo
 
 1. CE QU'IL FAUT ABSOLUMENT ÉVITER (Bannissement total) :
 - Le verbiage et les tics de langage : N'utilise JAMAIS les formulations suivantes (ni leurs synonymes) : "À l'ère de...", "Dans un monde de plus en plus...", "Au-delà de...", "Ce n'est pas seulement X, c'est un véritable Y", "Il est crucial/essentiel de se rappeler/noter que...", "Un véritable catalyseur / pilier / levier...", "L'architecture invisible / la toile de fond / la danse complexe de...".
+- Les pléonasmes : Évite absolument les répétitions inutiles et les pléonasmes (ex: "sensation sensorielle", "monopole exclusif", "panacée universelle").
 - L'exagération et le ton promotionnel : Reste d'une neutralité absolue. Bannis les adjectifs émotionnels ou grandiloquents (ex: "incroyable", "révolutionnaire", "fascinant", "redoutable").
 - Les phrases de remplissage : Ne fais aucune phrase d'introduction annonçant ce que tu vas dire. Ne fais aucune phrase de conclusion moralisatrice ou qui résume ce qui vient d'être lu.
 - Les métaphores filées et la poésie d'entreprise : Garde un langage littéral. Ne parle pas pour ne rien dire.
@@ -118,12 +121,33 @@ imageKeywords : 2 mots-clés en ANGLAIS pour chercher des images pertinentes sur
 `;
 
     const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    
+    // Vérification des filtres de sécurité
+    if (result.response.candidates && result.response.candidates[0].finishReason === 'SAFETY') {
+      console.error('[API] Génération bloquée par les filtres de sécurité Gemini sur le sujet:', topic);
+      return NextResponse.json(
+        { error: 'Le sujet a été bloqué par les filtres de sécurité de l\'IA.' },
+        { status: 403 }
+      );
+    }
+
+    let text;
+    try {
+      text = result.response.text();
+    } catch (textErr) {
+      console.error('[API] Erreur d\'extraction du texte (Safety block ?):', textErr);
+      return NextResponse.json(
+        { error: 'Le contenu généré est indisponible (potentiel blocage de sécurité).' },
+        { status: 500 }
+      );
+    }
 
     // Parse du JSON retourné par Gemini
     let lessonData: any;
     try {
-      const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+      // Nettoyage plus robuste du JSON pour éviter les caractères parasites avant/après
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const cleanText = jsonMatch ? jsonMatch[0] : text;
       lessonData = JSON.parse(cleanText);
     } catch {
       console.error('[API] Erreur parsing JSON Gemini:', text.slice(0, 200));

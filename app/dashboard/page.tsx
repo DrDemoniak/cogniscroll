@@ -12,7 +12,7 @@ import { useAuth } from '@/lib/auth-context';
 import AuthGuard from '@/components/layout/AuthGuard';
 import Navbar from '@/components/layout/Navbar';
 import { useToast } from '@/components/ui/Toast';
-import { getRecentLessons, getDueReviewCards, unlockBadges } from '@/lib/firestore';
+import { getRecentLessons, getDueReviewCards, unlockBadges, getInProgressLesson } from '@/lib/firestore';
 import { checkNewBadges, getLevelForXP, getLevelProgress, getBadgeById } from '@/lib/gamification';
 import { THEMES } from '@/lib/themes';
 import type { SavedLesson } from '@/lib/types';
@@ -22,6 +22,7 @@ export default function DashboardPage() {
   const { addToast } = useToast();
 
   const [recentLessons, setRecentLessons] = useState<SavedLesson[]>([]);
+  const [inProgressLesson, setInProgressLesson] = useState<SavedLesson | null>(null);
   const [dueCardsCount, setDueCardsCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -34,13 +35,15 @@ export default function DashboardPage() {
         setIsLoading(true);
 
         // Chargement parallèle des données
-        const [lessons, cards] = await Promise.all([
+        const [lessons, cards, inProgress] = await Promise.all([
           getRecentLessons(user!.uid, 3),
           getDueReviewCards(user!.uid),
+          getInProgressLesson(user!.uid),
         ]);
 
         setRecentLessons(lessons);
         setDueCardsCount(cards.length);
+        setInProgressLesson(inProgress);
 
         // Vérification des nouveaux badges (attend userProfile)
         if (userProfile) {
@@ -179,9 +182,29 @@ export default function DashboardPage() {
 
           {/* ── CTA PRINCIPALE ── */}
           <div style={{ display: 'flex', gap: 'var(--space-4)', marginBottom: 'var(--space-8)', flexWrap: 'wrap' }}>
-            <Link href="/learn" className="btn btn-primary btn-lg" style={{ flex: 1, minWidth: 200 }}>
-              🚀 Commencer une leçon
-            </Link>
+            {inProgressLesson ? (
+              <button
+                className="btn btn-primary btn-lg"
+                style={{ flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+                onClick={() => {
+                  sessionStorage.setItem('currentLesson', JSON.stringify(inProgressLesson.content));
+                  sessionStorage.setItem('currentLessonId', inProgressLesson.id);
+                  sessionStorage.setItem('isFavorite', String(inProgressLesson.isFavorite));
+                  sessionStorage.setItem('lessonStatus', 'in_progress');
+                  window.location.href = `/learn/${inProgressLesson.theme}/lesson`;
+                }}
+              >
+                <span>📖 Continuer ma leçon</span>
+                <span style={{ fontSize: '0.8rem', opacity: 0.8, fontWeight: 400, marginTop: '2px' }}>
+                  {inProgressLesson.content.title}
+                </span>
+              </button>
+            ) : (
+              <Link href="/learn" className="btn btn-primary btn-lg" style={{ flex: 1, minWidth: 200 }}>
+                🚀 Commencer une leçon
+              </Link>
+            )}
+            
             {dueCardsCount > 0 && (
               <Link href="/reviews" className="btn btn-secondary btn-lg" style={{ flex: 1, minWidth: 200 }}>
                 🧠 {dueCardsCount} révision{dueCardsCount > 1 ? 's' : ''} due{dueCardsCount > 1 ? 's' : ''}

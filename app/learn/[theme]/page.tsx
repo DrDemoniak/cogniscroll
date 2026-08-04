@@ -13,7 +13,7 @@ import AuthGuard from '@/components/layout/AuthGuard';
 import Navbar from '@/components/layout/Navbar';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/ui/Toast';
-import { getLessonsByTheme } from '@/lib/firestore';
+import { getLessonsByTheme, startLesson } from '@/lib/firestore';
 import { getThemeById } from '@/lib/themes';
 import type { SavedLesson } from '@/lib/types';
 
@@ -209,38 +209,45 @@ function RoadmapNode({
     sessionStorage.setItem('currentLesson',   JSON.stringify(lesson.content));
     sessionStorage.setItem('currentLessonId', lesson.id);
     sessionStorage.setItem('isFavorite',      String(lesson.isFavorite));
+    sessionStorage.setItem('lessonStatus',    lesson.status || 'completed');
     router.push(`/learn/${lesson.theme}/lesson`);
   };
 
-  // ── Nœud complété ────────────────────────────────────────────
+  // ── Nœud complété ou en cours ────────────────────────────────────────────
   if (lesson) {
+    const isInProgress = lesson.status === 'in_progress';
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', position: 'relative' }}>
-        {/* Cercle complété */}
+        {/* Cercle complété / en cours */}
         <div
           style={{
             width: 56,
             height: 56,
             borderRadius: '50%',
-            background: 'linear-gradient(135deg, var(--success, #22c55e), #16a34a)',
+            background: isInProgress 
+              ? 'linear-gradient(135deg, var(--primary, #6366f1), #4f46e5)' 
+              : 'linear-gradient(135deg, var(--success, #22c55e), #16a34a)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
-            boxShadow: '0 0 0 4px rgba(34, 197, 94, 0.2)',
+            boxShadow: isInProgress 
+              ? '0 0 0 4px rgba(99, 102, 241, 0.2)' 
+              : '0 0 0 4px rgba(34, 197, 94, 0.2)',
             fontSize: '1.3rem',
           }}
         >
-          ✅
+          {isInProgress ? '📖' : '✅'}
         </div>
         {/* Card leçon */}
         <div
           className="card card-clickable"
-          style={{ flex: 1, padding: 'var(--space-4)', cursor: 'pointer' }}
+          style={{ flex: 1, padding: 'var(--space-4)', cursor: 'pointer', border: isInProgress ? '2px solid var(--primary)' : '1px solid var(--border)' }}
           onClick={handleClick}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
             <span className="badge badge-surface" style={{ fontSize: '0.7rem' }}>Niveau {index + 1}</span>
+            {isInProgress && <span className="badge" style={{ background: 'var(--primary)', color: 'white', fontSize: '0.7rem' }}>En cours</span>}
             {lesson.isFavorite && <span>❤️</span>}
           </div>
           <p style={{ fontWeight: 600, margin: 0, fontSize: '0.95rem' }}>
@@ -387,11 +394,23 @@ export default function ThemePage({ params }: { params: Promise<{ theme: string 
       if (!res.ok) throw new Error(`API error: ${res.status}`);
       const { lesson } = await res.json();
 
-      sessionStorage.setItem('currentLesson',   JSON.stringify(lesson));
-      sessionStorage.setItem('currentLessonId', '');
-      sessionStorage.setItem('isFavorite',      'false');
+      // Sauvegarde immédiate dans Firestore avec le statut 'in_progress'
+      let savedId = '';
+      if (user) {
+        savedId = await startLesson(user.uid, {
+          theme: themeConfig.name,
+          topic: lesson.topic,
+          content: lesson,
+          isFavorite: false,
+        } as any);
+      }
 
-      console.log('[THEME] Leçon générée:', lesson.title);
+      sessionStorage.setItem('currentLesson',   JSON.stringify(lesson));
+      sessionStorage.setItem('currentLessonId', savedId);
+      sessionStorage.setItem('isFavorite',      'false');
+      sessionStorage.setItem('lessonStatus',    'in_progress');
+
+      console.log('[THEME] Leçon générée (et sauvegardée en cours):', lesson.title, savedId);
       router.push(`/learn/${themeId}/lesson`);
     } catch (err) {
       console.error('[THEME] Erreur génération:', err);

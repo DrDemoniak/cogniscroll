@@ -15,7 +15,7 @@ import Navbar from '@/components/layout/Navbar';
 import LessonReader from '@/components/features/LessonReader';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/ui/Toast';
-import { saveLesson, addXP, unlockBadges, recordDailyStats, toggleFavorite } from '@/lib/firestore';
+import { saveLesson, completeLesson, addXP, unlockBadges, recordDailyStats, toggleFavorite } from '@/lib/firestore';
 import { checkNewBadges, getBadgeById, XP_REWARDS } from '@/lib/gamification';
 import type { LessonContent } from '@/lib/types';
 
@@ -28,14 +28,15 @@ export default function LessonPage() {
   const [lessonData,  setLessonData]  = useState<LessonContent | null>(null);
   const [lessonId,    setLessonId]    = useState<string>('');
   const [isFavorite,  setIsFavorite]  = useState(false);
-  // isCompleted = true dès le mount si la leçon était déjà sauvegardée (evite le double comptage)
+  // isCompleted = true dès le mount si la leçon était déjà sauvegardée et COMPLÉTÉE
   const [isCompleted, setIsCompleted] = useState(false);
 
   // ── Chargement depuis sessionStorage ──────────────────────────────────
   useEffect(() => {
-    const stored    = sessionStorage.getItem('currentLesson');
-    const storedId  = sessionStorage.getItem('currentLessonId') || '';
-    const storedFav = sessionStorage.getItem('isFavorite') === 'true';
+    const stored       = sessionStorage.getItem('currentLesson');
+    const storedId     = sessionStorage.getItem('currentLessonId') || '';
+    const storedFav    = sessionStorage.getItem('isFavorite') === 'true';
+    const lessonStatus = sessionStorage.getItem('lessonStatus');
 
     if (!stored) {
       console.warn('[LESSON] Pas de leçon en session, redirection');
@@ -48,10 +49,8 @@ export default function LessonPage() {
     setLessonId(storedId);
     setIsFavorite(storedFav);
 
-    // Si la leçon a déjà un ID Firestore → elle a déjà été sauvegardée
-    // On la marque complétée directement pour éviter le double comptage au rechargement
-    if (storedId) {
-      console.log('[LESSON] Leçon déjà sauvegardée (ID trouvé), marquage isCompleted=true');
+    if (lessonStatus === 'completed') {
+      console.log('[LESSON] Leçon déjà complétée, on marque isCompleted=true pour bloquer la fraude XP');
       setIsCompleted(true);
     }
   }, [router]);
@@ -85,17 +84,22 @@ export default function LessonPage() {
     setIsCompleted(true);
 
     try {
-      // 1. Sauvegarde Firestore (seulement si pas déjà sauvegardée)
-      const savedId = await saveLesson(user.uid, {
-        theme: params.theme,
-        topic: lessonData.topic,
-        content: lessonData,
-        isFavorite: false,
-        completedAt: new Date().toISOString(),
-      });
-      setLessonId(savedId);
-      sessionStorage.setItem('currentLessonId', savedId);
-      console.log('[LESSON] Sauvegardée avec ID:', savedId);
+      // 1. Sauvegarde Firestore
+      if (lessonId) {
+        await completeLesson(user.uid, lessonId, params.theme);
+        console.log('[LESSON] Statut passé à completed pour ID:', lessonId);
+      } else {
+        const savedId = await saveLesson(user.uid, {
+          theme: params.theme,
+          topic: lessonData.topic,
+          content: lessonData,
+          isFavorite: false,
+        } as any);
+        setLessonId(savedId);
+        sessionStorage.setItem('currentLessonId', savedId);
+        console.log('[LESSON] Nouvelle leçon sauvegardée avec ID:', savedId);
+      }
+      sessionStorage.setItem('lessonStatus', 'completed');
 
       // 2. XP + stats quotidiennes
       await addXP(user.uid, XP_REWARDS.LESSON_READ);

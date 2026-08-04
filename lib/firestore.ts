@@ -151,16 +151,70 @@ export async function updateSettings(
 // LEÇONS — users/{uid}/lessons/{lessonId}
 // ─────────────────────────────────────────────
 
-/** Sauvegarde une leçon terminée */
-export async function saveLesson(
+/** Démarre une leçon (sauvegarde initiale en statut in_progress sans XP) */
+export async function startLesson(
   uid: string,
   lesson: Omit<SavedLesson, 'id' | 'uid'>
 ): Promise<string> {
-  console.log('[FIRESTORE] Sauvegarde leçon:', lesson.content.title);
+  console.log('[FIRESTORE] Démarrage leçon:', lesson.content.title);
   const ref = collection(db, 'users', uid, 'lessons');
   const docRef = await addDoc(ref, {
     ...lesson,
     uid,
+    status: 'in_progress',
+    startedAt: serverTimestamp(), // on garde la trace du début
+    completedAt: null,
+  });
+  return docRef.id;
+}
+
+/** Marque une leçon comme complétée et attribue l'XP/statistiques */
+export async function completeLesson(
+  uid: string,
+  lessonId: string,
+  theme: string
+): Promise<void> {
+  console.log('[FIRESTORE] Complétion leçon:', lessonId);
+  const docRef = doc(db, 'users', uid, 'lessons', lessonId);
+  await updateDoc(docRef, {
+    status: 'completed',
+    completedAt: serverTimestamp(),
+  });
+
+  // Mise à jour des compteurs du profil
+  const themeKey = `themeProgress.${theme}`;
+  await updateDoc(doc(db, 'users', uid), {
+    totalLessonsCompleted: increment(1),
+    dailyProgress: increment(1),
+    [themeKey]: increment(1),
+  });
+}
+
+/** Récupère la dernière leçon en cours (s'il y en a une) */
+export async function getInProgressLesson(uid: string): Promise<SavedLesson | null> {
+  console.log('[FIRESTORE] Recherche leçon en cours:', uid);
+  const q = query(
+    collection(db, 'users', uid, 'lessons'),
+    where('status', '==', 'in_progress'),
+    orderBy('startedAt', 'desc'),
+    limit(1)
+  );
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  return { id: snap.docs[0].id, ...snap.docs[0].data() } as SavedLesson;
+}
+
+/** Sauvegarde une leçon terminée (legacy pour rétrocompatibilité / PDF) */
+export async function saveLesson(
+  uid: string,
+  lesson: Omit<SavedLesson, 'id' | 'uid'>
+): Promise<string> {
+  console.log('[FIRESTORE] Sauvegarde leçon (legacy):', lesson.content.title);
+  const ref = collection(db, 'users', uid, 'lessons');
+  const docRef = await addDoc(ref, {
+    ...lesson,
+    uid,
+    status: 'completed',
     completedAt: serverTimestamp(),
   });
 

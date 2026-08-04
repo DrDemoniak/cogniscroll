@@ -61,6 +61,7 @@ export interface SavedLesson {
   content: LessonContent;
   completedAt: any;   // Firestore Timestamp
   isFavorite: boolean;
+  status?: 'in_progress' | 'completed';
 }
 
 // ─────────────────────────────────────────────
